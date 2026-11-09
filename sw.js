@@ -1,7 +1,7 @@
 // Service worker : l'application fonctionne hors ligne (fichiers en cache).
 // Les cours Euronext ne passent pas par ici (autre domaine) : ils sont gardés par l'application elle-même.
 // Changer VERSION à chaque mise à jour de l'application pour que les appareils la récupèrent.
-const VERSION = "investir-pea-1.1.0";
+const VERSION = "investir-pea-1.3.0";
 const FICHIERS = [
   "./", "index.html", "styles.css", "manifest.webmanifest",
   "js/app.js", "js/calculs.js", "js/donnees.js", "js/cours.js", "js/graphiques.js",
@@ -23,7 +23,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-cache" })   // toujours revalider : jamais un mélange d'anciens et de nouveaux fichiers
       .then(r => { if (r.ok) { const copie = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copie)); } return r; })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match("index.html")))
   );

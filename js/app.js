@@ -2,9 +2,9 @@
 import * as C from "./calculs.js";
 import * as D from "./donnees.js";
 import { actualiser as actualiserCours, provisoire, jourParis } from "./cours.js";
-import { courbe, barres } from "./graphiques.js";
+import { courbe, colonnes } from "./graphiques.js";
 
-export const VERSION = "1.1.0";
+export const VERSION = "1.3.0";
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
 const CLE_EXPORT = "investir-pea:dernier-export";
@@ -492,7 +492,7 @@ function graphiques() {
   $("gPvInfo").textContent = der ? `${pct(der.pvPct, true, 2)} · ${eurS(der.pv)}` : "";
   courbe($("gPv"), { dates, titre: "Plus-value en % du montant investi", zero: true,
     series: [{ nom: "Plus-value", couleur: "var(--e1)", valeurs: h.map(p => p.pvPct), aire: true }],
-    format: v => pct(v, true, 2), formatAxe: v => nf(v * 100, 0) + " %",
+    format: v => pct(v, true, 2), formatAxe: v => nf(Math.round(v * 100) || 0, 0) + " %",
     bulle: i => [["Plus-value", pct(h[i].pvPct, true, 2), "var(--e1)"], ["en euros", eurS(h[i].pv)], ["Investi", eur(h[i].investi, 0)]] });
 
   $("gValInfo").textContent = der && prem ? `${eur(der.valeur, 0)} · versé ${eur(der.verse, 0)}` : "";
@@ -502,12 +502,86 @@ function graphiques() {
     format: v => eur(v, 0), formatAxe: k,
     bulle: i => [["Valeur du PEA", eur(h[i].valeur, 0), "var(--e1)"], ["Total versé", eur(h[i].verse, 0), "var(--verse)"], ["Écart", eurS(h[i].valeur - h[i].verse)]] });
 
-  barres($("gEcart"), VUE.lignes.filter(l => l.cible > 0).map(l => ({
-    nom: l.court, couleur: couleur(l.isin), valeur: l.ecart * 100,
-    texte: (l.ecart >= 0 ? "+" : "−") + nf(Math.abs(l.ecart * 100), 1) + " pt", detail: `${pct(l.poids)} / ${pct(l.cible, false, 0)}` })),
-    { note: "À droite : en avance sur la cible. À gauche : en retard, renforcé en priorité." });
-  barres($("gPvEtf"), VUE.lignes.map(l => ({ nom: l.court, couleur: couleur(l.isin), valeur: l.pv || 0, texte: eurS(l.pv), detail: pct(l.pvPct, true) })));
+  // performance comparée : chaque ETF et le PEA (hors versements), base 100 au début de la période
+  const series = etfs().map(e => {
+    let dernier = null, base = null;
+    const valeurs = dates.map(d => {
+      const c = COURS.closes[e.isin]?.[d];
+      if (c != null) dernier = c;
+      if (dernier == null) return null;
+      base ??= dernier;
+      return dernier / base * 100;
+    });
+    return { nom: e.court, couleur: couleur(e.isin), valeurs };
+  });
+  const base = prem?.indice;
+  series.unshift({ nom: "Mon PEA", couleur: "var(--encre)", epaisseur: 2.5, valeurs: h.map(p => p.indice / base * 100) });
+  courbe($("gPerf"), { dates, titre: "Performance comparée, base 100",
+    series, format: v => (v >= 100 ? "+" : "−") + nf(Math.abs(v - 100), 1) + " %", formatAxe: v => nf(v, 0) });
+
+  // repli depuis le plus haut (indice hors versements)
+  const pire = h.reduce((a, p) => (p.repli < a.repli ? p : a), h[0] || { repli: 0 });
+  $("gRepliInfo").textContent = h.length ? `pire repli ${pct(pire.repli, true)} le ${dFr(pire.date)} · actuel ${pct(der.repli, true)}` : "";
+  courbe($("gRepli"), { dates, titre: "Repli depuis le plus haut", zero: true, hauteur: 180,
+    series: [{ nom: "Repli", couleur: "var(--rouge)", valeurs: h.map(p => p.repli), aire: true }],
+    format: v => pct(v, true), formatAxe: v => nf(Math.round(v * 100) || 0, 0) + " %" });
+
+  // répartition dans le temps (lignes à cible > 0) + cibles en pointillés
+  const suivies = etfs().filter(e => e.cible > 0);
+  const poids = h.map(p => {
+    const t = suivies.reduce((s, e) => s + (p.parEtf[e.isin] || 0), 0);
+    return Object.fromEntries(suivies.map(e => [e.isin, t ? (p.parEtf[e.isin] || 0) / t : null]));
+  });
+  courbe($("gRepart"), { dates, titre: "Répartition dans le temps",
+    series: [...suivies.map(e => ({ nom: e.court, couleur: couleur(e.isin), valeurs: poids.map(p => p[e.isin]) })),
+             ...suivies.map(e => ({ nom: `cible ${e.court}`, couleur: couleur(e.isin), valeurs: dates.map(() => e.cible), pointille: true, legende: false, epaisseur: 1.5, opacite: 0.7 }))],
+    format: v => pct(v), formatAxe: v => nf(Math.round(v * 100) || 0, 0) + " %",
+    bulle: i => suivies.map(e => [e.court, `${pct(poids[i][e.isin])} / ${pct(e.cible, false, 0)}`, couleur(e.isin)]) });
+
+  // investi par mois
+  const debutMois = dates[0]?.slice(0, 7) || "";
+  const mois = C.investiParMois(DON.achats).filter(m => m.mois >= debutMois);
+  const totalPeriode = mois.reduce((s, m) => s + m.plan + m.ponctuel, 0);
+  $("gMoisInfo").textContent = mois.length ? `${eur(totalPeriode, 0)} sur la période · ${eur(totalPeriode / mois.length, 0)}/mois en moyenne` : "";
+  const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  colonnes($("gMois"), { titre: "Investi par mois", categories: mois.map(m => m.mois),
+    series: [{ nom: "Plan d'épargne", couleur: "var(--e1)", valeurs: mois.map(m => m.plan) },
+             { nom: "Achats ponctuels", couleur: "var(--e2)", valeurs: mois.map(m => m.ponctuel) }],
+    format: v => eur(v, 0), formatAxe: k,
+    libelleAxe: i => { const [a, mo] = mois[i].mois.split("-"); return +mo === 1 ? a : MOIS[+mo - 1]; },
+    titreBulle: i => { const [a, mo] = mois[i].mois.split("-"); return `${MOIS[+mo - 1]} ${a}`; } });
+
+  projectionGraphe();
 }
+
+function projectionGraphe() {
+  const r = VUE.resume;
+  const plan = Object.values(DON.plan.montants || {}).reduce((a, b) => a + b, 0);
+  if ($("fProjMensuel").value === "") $("fProjMensuel").value = plan || 500;
+  const mensuel = parseFloat($("fProjMensuel").value) || 0;
+  const taux = [0.05, 0.07, 0.09];
+  const scen = taux.map(t => C.projection(r.valeur, r.verse, mensuel, t));
+  const t0 = aujourdhui();
+  const [a0, m0] = t0.split("-").map(Number);
+  const dates = scen[0].map(p => { const m = m0 - 1 + p.mois; return `${a0 + Math.floor(m / 12)}-${String(m % 12 + 1).padStart(2, "0")}-01`; });
+  const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  const moisFr = d => `${MOIS[+d.slice(5, 7) - 1]} ${d.slice(0, 4)}`;
+  const reste = (DON.reglages.plafond || 150000) - r.verse;
+  const nPlafond = mensuel > 0 ? Math.ceil(reste / mensuel) : null;
+  const dPlafond = nPlafond == null ? null : (() => { const m = m0 - 1 + nPlafond; return `${a0 + Math.floor(m / 12)}-${String(m % 12 + 1).padStart(2, "0")}-01`; })();
+  $("gProjInfo").textContent = nPlafond == null ? "" : `plafond de versements (${eur(DON.reglages.plafond || 150000, 0)}) atteint vers ${moisFr(dPlafond)} à ce rythme`;
+  const fin = scen.map(s => s[s.length - 1]);
+  $("gProjChiffres").innerHTML = taux.map((t, i) => `<div><span>Dans 10 ans à ${nf(t * 100, 0)} %/an</span><b>${eur(fin[i].valeur, 0)}</b><small>dont ${eur(fin[i].verse, 0)} versés</small></div>`).join("");
+  const k = v => Math.abs(v) >= 1000 ? nf(v / 1000, 0) + " k€" : nf(v, 0) + " €";
+  const teinte = p => `color-mix(in srgb, var(--e1) ${p}%, var(--carte))`;
+  courbe($("gProj"), { dates, titre: "Projection à 10 ans", pasMois: 12, titreBulle: moisFr,
+    series: [{ nom: "à 9 %/an", couleur: teinte(100), valeurs: scen[2].map(p => p.valeur) },
+             { nom: "à 7 %/an", couleur: teinte(70), valeurs: scen[1].map(p => p.valeur) },
+             { nom: "à 5 %/an", couleur: teinte(45), valeurs: scen[0].map(p => p.valeur) },
+             { nom: "Total versé", couleur: "var(--verse)", valeurs: scen[0].map(p => p.verse), pointille: true }],
+    format: v => eur(v, 0), formatAxe: k });
+}
+$("fProjMensuel").addEventListener("input", () => { clearTimeout(window.__proj); window.__proj = setTimeout(projectionGraphe, 200); });
 document.querySelectorAll("[data-periode]").forEach(b => b.onclick = () => {
   PERIODE = b.dataset.periode === "max" || b.dataset.periode === "ytd" ? b.dataset.periode : +b.dataset.periode;
   document.querySelectorAll("[data-periode]").forEach(x => x.classList.toggle("actif", x === b));
@@ -587,6 +661,30 @@ async function chargerCours(manuel = false) {
   else if (manuel) toast(`Cours actualisés ✓  ${libelleCours()}`);
 }
 $("btnActualiser").onclick = () => occupe($("btnActualiser"), () => chargerCours(true));
+
+// ---------- thème : automatique (comme le téléphone / PC) → clair → sombre ----------
+const CLE_THEME = "investir-pea:theme";
+const THEMES = {
+  auto: { nom: "automatique", svg: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/>' },
+  light: { nom: "clair", svg: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>' },
+  dark: { nom: "sombre", svg: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>' },
+};
+function appliquerTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else { delete document.documentElement.dataset.theme; t = "auto"; }
+  try { localStorage.setItem(CLE_THEME, t); } catch { /* */ }
+  $("btnTheme").innerHTML = `<svg viewBox="0 0 24 24">${THEMES[t].svg}</svg>`;
+  $("btnTheme").title = `Thème ${THEMES[t].nom} (toucher pour changer)`;
+  const sombre = t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.querySelector('meta[name="theme-color"]').content = sombre ? "#0f141a" : "#164278";
+  return t;
+}
+let THEME = (() => { try { return localStorage.getItem(CLE_THEME) || "auto"; } catch { return "auto"; } })();
+THEME = appliquerTheme(THEME);
+$("btnTheme").onclick = () => {
+  THEME = appliquerTheme({ auto: "light", light: "dark", dark: "auto" }[THEME]);
+  toast(`Thème ${THEMES[THEME].nom}`);
+};
 
 // ---------- onglets ----------
 function ouvrirOnglet(nom) {

@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Investir PEA">
 <link rel="stylesheet" href="styles.css">
+<script>try { const t = localStorage.getItem("investir-pea:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
 <div class="page">
@@ -23,6 +24,7 @@
     </div>
     <div class="actions">
       <button class="btn" id="btnActualiser" title="Télécharger les derniers cours Euronext">Actualiser les cours</button>
+      <button class="btn icone" id="btnTheme" title="Thème" aria-label="Thème"></button>
     </div>
   </header>
 
@@ -116,16 +118,32 @@
       <h2>Valeur du PEA vs total versé <span class="aide" id="gValInfo"></span></h2>
       <div id="gVal"></div>
     </section>
-    <div class="grille">
-      <section class="carte">
-        <h2>Écart vs cible <span class="aide">en points, lignes à cible &gt; 0 %</span></h2>
-        <div id="gEcart"></div>
-      </section>
-      <section class="carte">
-        <h2>Plus-value par ETF <span class="aide">latente, aux derniers cours</span></h2>
-        <div id="gPvEtf"></div>
-      </section>
-    </div>
+    <section class="carte">
+      <h2>Performance comparée <span class="aide">base 100 au début de la période · « Mon PEA » hors effet des versements</span></h2>
+      <div id="gPerf"></div>
+    </section>
+    <section class="carte">
+      <h2>Repli depuis le plus haut <span class="aide" id="gRepliInfo"></span></h2>
+      <div id="gRepli"></div>
+    </section>
+    <section class="carte">
+      <h2>Répartition dans le temps <span class="aide">poids sur les lignes à cible &gt; 0 % · pointillés = cibles actuelles</span></h2>
+      <div id="gRepart"></div>
+    </section>
+    <section class="carte">
+      <h2>Investi par mois <span class="aide" id="gMoisInfo"></span></h2>
+      <div id="gMois"></div>
+    </section>
+    <section class="carte">
+      <h2>Projection à 10 ans <span class="aide">simulation, pas une prévision · indépendante de la période</span></h2>
+      <div class="reglage">
+        <label class="en-ligne">Versement mensuel <input type="number" id="fProjMensuel" min="0" step="10" inputmode="decimal"> €</label>
+        <span id="gProjInfo"></span>
+      </div>
+      <div class="chiffres-proj" id="gProjChiffres"></div>
+      <div id="gProj"></div>
+      <div class="note-graphe">Rendements annuels hypothétiques de 5 %, 7 % et 9 %, appliqués chaque mois à la valeur actuelle du PEA et à chaque versement. Les marchés ne montent pas en ligne droite : il y aura des années négatives.</div>
+    </section>
   </div>
 
   <!-- ===== Ma stratégie ===== -->

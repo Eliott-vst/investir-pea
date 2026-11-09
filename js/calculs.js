@@ -205,7 +205,10 @@ export function versementsParDate(ops, verse) {
 // ---------- historique quotidien ----------
 
 /** Valeur du PEA jour par jour à partir des achats, versements et clôtures (ajustées des divisions).
- *  → [{date, titres, investi, verse, liquidites, valeur, pv, pvPct}] */
+ *  → [{date, titres, investi, verse, liquidites, valeur, pv, pvPct, parEtf: {isin: valeur}, achete,
+ *      indice, repli}]
+ *  indice : performance des titres hors effet des versements (base 1 au premier achat) ;
+ *  repli : écart de cet indice avec son plus haut (≤ 0). */
 export function historique(donnees, closes) {
   const achats = [...donnees.achats].sort((a, b) => a.date.localeCompare(b.date));
   if (!achats.length) return [];
@@ -220,27 +223,73 @@ export function historique(donnees, closes) {
     const avant = serie(closes[i]).filter(([d]) => d < debut).pop();
     if (avant) dernier[i] = avant[1];
   }
-  let ia = 0, iv = 0, investi = 0, verse = 0, ajuste = 0;
+  let ia = 0, iv = 0, investi = 0, verse = 0, ajuste = 0, titresVeille = 0, indice = 1, plusHaut = 1;
   const out = [];
   for (const d of jours) {
+    let achete = 0;
     while (ia < achats.length && achats[ia].date <= d) {
       const a = achats[ia++];
       parts[a.isin] = (parts[a.isin] || 0) + a.parts * facteurDivision(donnees.divisions, a.isin, a.date);
       investi += a.parts * a.prix;
+      achete += a.parts * a.prix;
     }
     while (iv < versements.length && versements[iv].date <= d) {
       const v = versements[iv++];
       if (estAjustement(v)) ajuste += v.montant; else verse += v.montant;
     }
     let titres = 0;
+    const parEtf = {};
     for (const i of isins) {
       const c = closes[i]?.[d];
       if (c != null) dernier[i] = c;
-      if (parts[i] && dernier[i] != null) titres += parts[i] * dernier[i];
+      parEtf[i] = parts[i] && dernier[i] != null ? parts[i] * dernier[i] : 0;
+      titres += parEtf[i];
     }
+    const base = titresVeille + achete;               // ce que valaient hier les titres + ce qui a été acheté
+    if (base > 0) indice *= titres / base;
+    plusHaut = Math.max(plusHaut, indice);
+    titresVeille = titres;
     const liquidites = verse + ajuste - investi;
     out.push({ date: d, titres, investi, verse, liquidites, valeur: titres + liquidites,
-               pv: titres - investi, pvPct: investi ? titres / investi - 1 : null });
+               pv: titres - investi, pvPct: investi ? titres / investi - 1 : null,
+               parEtf, achete, indice, repli: indice / plusHaut - 1 });
+  }
+  return out;
+}
+
+// ---------- projection ----------
+
+/** Valeur future mois par mois avec un versement mensuel et un rendement annuel (capitalisation mensuelle).
+ *  → [{mois, valeur, verse}] (mois 0 = aujourd'hui) */
+export function projection(valeur, verse, mensuel, rendementAnnuel, mois = 120) {
+  const r = (1 + rendementAnnuel) ** (1 / 12) - 1;
+  const out = [{ mois: 0, valeur, verse }];
+  for (let m = 1; m <= mois; m++) {
+    valeur = valeur * (1 + r) + mensuel;
+    verse += mensuel;
+    out.push({ mois: m, valeur, verse });
+  }
+  return out;
+}
+
+/** Montant investi par mois, séparé plan d'épargne / achats ponctuels. → [{mois: "AAAA-MM", plan, ponctuel}] */
+export function investiParMois(achats) {
+  const m = {};
+  for (const a of achats) {
+    const k = a.date.slice(0, 7);
+    m[k] ||= { mois: k, plan: 0, ponctuel: 0 };
+    m[k][a.note === NOTE_PLAN ? "plan" : "ponctuel"] += a.parts * a.prix;
+  }
+  const cles = Object.keys(m).sort();
+  if (!cles.length) return [];
+  const out = [];
+  let [an, mo] = cles[0].split("-").map(Number);
+  const fin = cles[cles.length - 1];
+  for (;;) {                                           // mois sans achat inclus (barre vide)
+    const k = `${an}-${String(mo).padStart(2, "0")}`;
+    out.push(m[k] || { mois: k, plan: 0, ponctuel: 0 });
+    if (k >= fin) break;
+    if (++mo > 12) { mo = 1; an++; }
   }
   return out;
 }

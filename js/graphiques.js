@@ -23,9 +23,11 @@ export function courbe(conteneur, opts) {
   conteneur.innerHTML = "";
   const { dates, series } = opts;
   if (dates.length < 2) { conteneur.innerHTML = `<div class="vide">Pas encore assez de données.</div>`; return; }
-  if (series.length > 1) {
+  const enLegende = series.filter(s => s.legende !== false);
+  if (enLegende.length > 1 || opts.legende) {
     const leg = document.createElement("div"); leg.className = "legende";
-    leg.innerHTML = series.map(s => `<span><i class="${s.pointille ? "pointille" : ""}" style="--c:${s.couleur}"></i>${s.nom}</span>`).join("");
+    leg.innerHTML = enLegende.map(s => `<span><i class="${s.pointille ? "pointille" : ""}" style="--c:${s.couleur}"></i>${s.nom}</span>`).join("")
+      + (opts.legende || "");
     conteneur.appendChild(leg);
   }
   const zone = document.createElement("div"); zone.className = "graphe-zone"; conteneur.appendChild(zone);
@@ -52,7 +54,7 @@ export function courbe(conteneur, opts) {
   }
   // repères de temps : un libellé par mois (ou par trimestre / année si la période est longue)
   const jours = dates.length, moisVus = new Set();
-  const pasMois = jours > 400 ? 6 : jours > 200 ? 3 : jours > 70 ? 1 : 0;
+  const pasMois = opts.pasMois ?? (jours > 400 ? 6 : jours > 200 ? 3 : jours > 70 ? 1 : 0);
   let dernierX = -1e9;
   if (pasMois) dates.forEach((d, i) => {
     const cle = d.slice(0, 7);
@@ -82,13 +84,14 @@ export function courbe(conteneur, opts) {
       const base = y(Math.max(min, 0));
       svg.appendChild(el("path", { d: `${dpath}L${x(dates.length - 1)},${base}L${x(0)},${base}Z`, fill: s.couleur, opacity: 0.1 }));
     }
-    svg.appendChild(el("path", { d: dpath, fill: "none", stroke: s.couleur, "stroke-width": 2, "stroke-linejoin": "round",
+    svg.appendChild(el("path", { d: dpath, fill: "none", stroke: s.couleur, "stroke-width": s.epaisseur || 2, "stroke-linejoin": "round",
+                                 ...(s.opacite ? { opacity: s.opacite } : {}),
                                  "stroke-linecap": "round", ...(s.pointille ? { "stroke-dasharray": "5 4" } : {}) }));
   }
   // réticule
   const reticule = el("line", { y1: m.h, y2: H - m.b, class: "reticule", visibility: "hidden" });
   svg.appendChild(reticule);
-  const points = series.map(s => { const c = el("circle", { r: 4.5, fill: s.couleur, class: "point", visibility: "hidden" }); svg.appendChild(c); return c; });
+  const points = series.map(s => { const c = el("circle", { r: s.legende === false ? 0 : 4.5, fill: s.couleur, class: "point", visibility: "hidden" }); svg.appendChild(c); return c; });
   const capte = el("rect", { x: m.g, y: 0, width: L - m.g - m.d, height: H, fill: "transparent" });
   svg.appendChild(capte);
   zone.appendChild(svg);
@@ -103,8 +106,8 @@ export function courbe(conteneur, opts) {
       points[k].setAttribute("visibility", v == null ? "hidden" : "visible");
       if (v != null) { points[k].setAttribute("cx", x(i)); points[k].setAttribute("cy", y(v)); }
     });
-    const lignes = opts.bulle ? opts.bulle(i) : series.map(s => [s.nom, opts.format(s.valeurs[i]), s.couleur]);
-    bulle.innerHTML = `<b>${dCourt(dates[i])}</b>` + lignes.map(([l, t, c]) =>
+    const lignes = opts.bulle ? opts.bulle(i) : enLegende.map(s => [s.nom, opts.format(s.valeurs[i]), s.couleur]);
+    bulle.innerHTML = `<b>${(opts.titreBulle || dCourt)(dates[i])}</b>` + lignes.map(([l, t, c]) =>
       `<div>${c ? `<i style="--c:${c}"></i>` : ""}<span>${l}</span><b>${t}</b></div>`).join("");
     bulle.hidden = false;
     const bx = x(i) * (r.width / L), bw = bulle.offsetWidth;
@@ -131,4 +134,78 @@ export function barres(conteneur, items, opts = {}) {
         <i class="barre-val" style="left:${gauche}%;width:${Math.max(w, 0.5)}%;background:${i.couleur}"></i></span>
       <span class="barre-txt n">${i.texte}${i.detail ? `<small>${i.detail}</small>` : ""}</span></div>`;
   }).join("")}</div>${opts.note ? `<div class="note-graphe">${opts.note}</div>` : ""}`;
+}
+
+/** Colonnes empilées (une par catégorie, ex. un mois). opts : { categories: [libellé], series: [{nom, couleur, valeurs}],
+ *  format, formatAxe, libelleAxe: i => texte|null, titreBulle: i => texte } */
+export function colonnes(conteneur, opts) {
+  conteneur.classList.add("graphe");
+  conteneur.innerHTML = "";
+  const { categories, series } = opts;
+  if (!categories.length) { conteneur.innerHTML = `<div class="vide">Pas encore de données.</div>`; return; }
+  const leg = document.createElement("div"); leg.className = "legende";
+  leg.innerHTML = series.map(s => `<span><i class="carre" style="--c:${s.couleur}"></i>${s.nom}</span>`).join("");
+  conteneur.appendChild(leg);
+  const zone = document.createElement("div"); zone.className = "graphe-zone"; conteneur.appendChild(zone);
+  const bulle = document.createElement("div"); bulle.className = "bulle"; bulle.hidden = true; zone.appendChild(bulle);
+
+  const L = Math.max(280, zone.clientWidth || conteneur.clientWidth || 600);
+  const H = opts.hauteur || (L < 500 ? 200 : 240);
+  const totaux = categories.map((_, i) => series.reduce((s, x) => s + (x.valeurs[i] || 0), 0));
+  const ticks = graduations(0, Math.max(...totaux, 1));
+  const max = ticks[ticks.length - 1];
+  const fa = opts.formatAxe || opts.format;
+  const m = { h: 10, b: 24, g: 10 + Math.max(...ticks.map(t => fa(t).length)) * 6.6, d: 4 };
+  const pas = (L - m.g - m.d) / categories.length;
+  const larg = Math.max(2, Math.min(28, pas - 3));
+  const y = v => m.h + (1 - v / max) * (H - m.h - m.b);
+  const svg = el("svg", { viewBox: `0 0 ${L} ${H}`, width: L, height: H, role: "img", "aria-label": opts.titre || "graphique" });
+  for (const t of ticks) {
+    svg.appendChild(el("line", { x1: m.g, x2: L - m.d, y1: y(t), y2: y(t), class: t === 0 ? "axe-zero" : "grille" }));
+    const tx = el("text", { x: m.g - 6, y: y(t) + 4, "text-anchor": "end", class: "axe" }); tx.textContent = fa(t); svg.appendChild(tx);
+  }
+  const survol = el("rect", { y: m.h, height: H - m.h - m.b, width: pas, class: "survol", visibility: "hidden" });
+  svg.appendChild(survol);
+  let dernierX = -1e9;
+  categories.forEach((c, i) => {
+    const x = m.g + i * pas + (pas - larg) / 2;
+    let bas = 0;
+    const visibles = series.map((s, k) => [k, s.valeurs[i] || 0]).filter(([, v]) => v > 0);
+    visibles.forEach(([k, v], n) => {
+      const haut = bas + v;
+      const y1 = y(haut), y0 = y(bas);
+      const gap = n > 0 ? 2 : 0;                       // 2 px de séparation entre segments
+      const h = Math.max(0, y0 - gap - y1);
+      const dessus = n === visibles.length - 1, r = Math.min(4, larg / 2, h);
+      const d = dessus
+        ? `M${x},${y0 - gap}V${y1 + r}Q${x},${y1} ${x + r},${y1}H${x + larg - r}Q${x + larg},${y1} ${x + larg},${y1 + r}V${y0 - gap}Z`
+        : `M${x},${y0 - gap}V${y1}H${x + larg}V${y0 - gap}Z`;
+      svg.appendChild(el("path", { d, fill: series[k].couleur }));
+      bas = haut;
+    });
+    const lib = opts.libelleAxe ? opts.libelleAxe(i) : c;
+    const cx = m.g + i * pas + pas / 2;
+    if (lib && cx - dernierX >= 40) {
+      dernierX = cx;
+      const tx = el("text", { x: cx, y: H - 6, "text-anchor": "middle", class: "axe" }); tx.textContent = lib; svg.appendChild(tx);
+    }
+  });
+  const capte = el("rect", { x: m.g, y: 0, width: L - m.g - m.d, height: H, fill: "transparent" });
+  svg.appendChild(capte);
+  zone.appendChild(svg);
+  const montrer = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) * (L / r.width);
+    const i = Math.max(0, Math.min(categories.length - 1, Math.floor((px - m.g) / pas)));
+    survol.setAttribute("x", m.g + i * pas); survol.setAttribute("visibility", "visible");
+    bulle.innerHTML = `<b>${opts.titreBulle ? opts.titreBulle(i) : categories[i]}</b>`
+      + series.map(s => `<div><i style="--c:${s.couleur}"></i><span>${s.nom}</span><b>${opts.format(s.valeurs[i] || 0)}</b></div>`).join("")
+      + `<div><span>Total</span><b>${opts.format(totaux[i])}</b></div>`;
+    bulle.hidden = false;
+    const bx = (m.g + i * pas + pas / 2) * (r.width / L), bw = bulle.offsetWidth;
+    bulle.style.left = Math.max(0, Math.min(r.width - bw, bx + (bx > r.width / 2 ? -bw - 12 : 12))) + "px";
+  };
+  capte.addEventListener("pointermove", montrer);
+  capte.addEventListener("pointerdown", montrer);
+  capte.addEventListener("pointerleave", () => { survol.setAttribute("visibility", "hidden"); bulle.hidden = true; });
 }
