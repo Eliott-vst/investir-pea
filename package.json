@@ -1,0 +1,6 @@
+{
+  "name": "investir-pea",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node tests/calculs.test.mjs ../migration/sauvegarde_initiale.json" }
+}

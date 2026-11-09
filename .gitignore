@@ -1,0 +1,7 @@
+node_modules/
+*.xlsx
+sauvegarde*.json
+investir-pea_*.json
+journal-pea_*.csv
+_test*
+tests/

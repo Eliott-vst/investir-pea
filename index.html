@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Investir PEA</title>
+<meta name="description" content="Suivi et rééquilibrage de mon PEA, données gardées sur l'appareil.">
+<meta name="theme-color" content="#164278">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icones/icone-192.png">
+<link rel="apple-touch-icon" href="icones/icone-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Investir PEA">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+  <header class="entete">
+    <img src="icones/icone-192.png" alt="" width="38" height="38">
+    <div class="titre">
+      <h1>Investir PEA</h1>
+      <div class="sous" id="sousTitre">Chargement…</div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btnActualiser" title="Télécharger les derniers cours Euronext">Actualiser les cours</button>
+    </div>
+  </header>
+
+  <div class="bandeau" id="bandeau" hidden></div>
+
+  <nav class="onglets" role="tablist" aria-label="Sections">
+    <button role="tab" data-onglet="accueil" class="actif"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg><span>Accueil</span></button>
+    <button role="tab" data-onglet="achats"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Achats</span></button>
+    <button role="tab" data-onglet="graphiques"><svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg><span>Graphiques</span></button>
+    <button role="tab" data-onglet="strategie"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg><span>Stratégie</span></button>
+    <button role="tab" data-onglet="journal"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"/></svg><span>Journal</span></button>
+    <button role="tab" data-onglet="sauvegarde"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Sauvegarde</span></button>
+  </nav>
+
+  <!-- ===== Accueil : tableau de bord + positions ===== -->
+  <div data-panneau="accueil" class="panneau">
+    <section class="kpis">
+      <div class="kpi"><div class="l">Valeur du PEA</div><div class="v" id="kValeur">—</div><div class="s" id="kValeurS">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Plus-value latente</div><div class="v" id="kPv">—</div><div class="s" id="kPvS">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Total versé</div><div class="v" id="kVerse">—</div><div class="s" id="kVerseS">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Liquidités</div><div class="v" id="kLiq">—</div><div class="s">utilisées au prochain achat</div></div>
+    </section>
+    <section class="carte">
+      <h2>Mes positions <span class="aide">poids calculé sur les lignes à cible &gt; 0 %</span></h2>
+      <div class="table-defile">
+        <table class="positions">
+          <thead><tr><th>ETF</th><th class="n">Parts</th><th class="n">Prix</th><th class="n">Valeur</th><th class="n">PRU</th><th class="n">Plus-value</th><th>Poids / cible</th></tr></thead>
+          <tbody id="posCorps"></tbody>
+          <tfoot id="posPied"></tfoot>
+        </table>
+      </div>
+    </section>
+    <section class="carte">
+      <h2>Valeur du PEA <span class="aide" id="miniInfo"></span></h2>
+      <div id="gMini"></div>
+    </section>
+  </div>
+
+  <!-- ===== Saisir mes achats ===== -->
+  <div data-panneau="achats" class="panneau" hidden>
+    <section class="carte">
+      <h2>Saisir mes achats <span class="aide">recopie tes transactions Trade Republic</span></h2>
+      <div class="outils">
+        <button class="btn primaire" id="btnPlan">Préremplir mon plan</button>
+        <span class="info" id="infoPlan"></span>
+      </div>
+      <div class="outils">
+        <label class="en-ligne">Montant à investir <input type="number" id="fMontant" min="0" step="10" inputmode="decimal" style="width:100px"> €</label>
+        <button class="btn" id="btnProposer">Proposer</button>
+        <span class="info" id="infoProposer"></span>
+      </div>
+      <div class="ops-tete" aria-hidden="true"><span>Date</span><span>ETF</span><span class="n">Parts</span><span class="n">Prix (€)</span><span class="n">Montant</span><span>Type</span><span></span></div>
+      <div id="opsCorps" class="ops"></div>
+      <div><button class="btn lien" id="btnAjouter">+ Ajouter un achat</button></div>
+      <div class="outils">
+        <label class="en-ligne">Versé pour ces achats <input type="number" id="fVerse" min="0" step="0.01" inputmode="decimal" style="width:120px"> €</label>
+        <span class="info" id="infoVerse">prérempli : montants du plan + achats ponctuels</span>
+        <button class="btn lien" id="btnVerseAuto" hidden>revenir au calcul auto</button>
+      </div>
+      <div class="totaux">
+        <div><span>Versé + liquidités</span><b id="tDispo">0,00 €</b></div>
+        <div><span>Investi</span><b id="tInvesti">0,00 €</b></div>
+        <div><span>Reste → liquidités</span><b id="tReste">0,00 €</b></div>
+        <div><span>Achats</span><b id="tNb">0</b></div>
+      </div>
+      <div class="pied">
+        <span class="alerte" id="alerteOp"></span>
+        <button class="btn" id="btnVider">Vider</button>
+        <button class="btn vert" id="btnValider">Valider les achats</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== Graphiques ===== -->
+  <div data-panneau="graphiques" class="panneau" hidden>
+    <div class="periodes" role="group" aria-label="Période">
+      <button data-periode="30">1M</button><button data-periode="91">3M</button><button data-periode="182">6M</button>
+      <button data-periode="365">1A</button><button data-periode="ytd">Cette année</button><button data-periode="max" class="actif">Max</button>
+    </div>
+    <section class="carte">
+      <h2>Plus-value en % du montant investi <span class="aide" id="gPvInfo"></span></h2>
+      <div id="gPv"></div>
+    </section>
+    <section class="carte">
+      <h2>Valeur du PEA vs total versé <span class="aide" id="gValInfo"></span></h2>
+      <div id="gVal"></div>
+    </section>
+    <div class="grille">
+      <section class="carte">
+        <h2>Écart vs cible <span class="aide">en points, lignes à cible &gt; 0 %</span></h2>
+        <div id="gEcart"></div>
+      </section>
+      <section class="carte">
+        <h2>Plus-value par ETF <span class="aide">latente, aux derniers cours</span></h2>
+        <div id="gPvEtf"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===== Ma stratégie ===== -->
+  <div data-panneau="strategie" class="panneau grille" hidden>
+    <section class="carte">
+      <h2>Mes cibles <span class="aide">0 % = ligne conservée, plus renforcée</span></h2>
+      <div class="table-defile">
+      <table class="cibles">
+        <thead><tr><th>ETF</th><th class="n">Poids actuel</th><th class="n">Cible</th><th class="n">Écart</th></tr></thead>
+        <tbody id="ciblesCorps"></tbody>
+        <tfoot><tr><td><b>Total</b></td><td></td><td class="n"><span class="somme" id="ciblesSomme"></span></td><td></td></tr></tfoot>
+      </table>
+      </div>
+      <div class="pied">
+        <span class="note" id="ciblesNote"></span>
+        <button class="btn" id="btnCiblesAnnuler">Annuler</button>
+        <button class="btn vert" id="btnCiblesOk" disabled>Enregistrer les cibles</button>
+      </div>
+    </section>
+
+    <section class="carte">
+      <h2>Plan d'épargne <span class="aide" id="planInfo"></span></h2>
+      <div class="rappel" id="planRappel" hidden></div>
+      <div id="planLignes"></div>
+      <div class="outils">
+        <label class="en-ligne">Montant mensuel <input type="number" id="fMensuel" min="0" step="10" inputmode="decimal" style="width:96px"> €</label>
+        <label class="en-ligne">le <select id="fJour"></select> du mois</label>
+        <button class="btn" id="btnRecalcul">Recalculer la répartition</button>
+      </div>
+      <div class="prop" id="planProp" hidden></div>
+    </section>
+  </div>
+
+  <!-- ===== Journal ===== -->
+  <div data-panneau="journal" class="panneau" hidden>
+    <section class="carte">
+      <h2>Journal des achats <span class="aide" id="jInfo"></span></h2>
+      <div class="outils">
+        <label class="en-ligne">Afficher <select id="jFiltre"><option value="">tous les achats</option><option>Plan d'épargne</option><option>Achat ponctuel</option></select></label>
+        <span class="info">Touchez le type pour le changer.</span>
+      </div>
+      <div class="table-defile">
+        <table class="journal">
+          <thead><tr><th>Date</th><th>ETF</th><th>Type</th><th class="n">Parts</th><th class="n">Prix</th><th class="n">Montant</th><th></th></tr></thead>
+          <tbody id="jCorps"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="carte">
+      <h2>Versements sur le PEA <span class="aide" id="vInfo"></span></h2>
+      <div class="table-defile">
+        <table class="journal">
+          <thead><tr><th>Date</th><th>Note</th><th class="n">Montant</th><th></th></tr></thead>
+          <tbody id="vCorps"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== Sauvegarde ===== -->
+  <div data-panneau="sauvegarde" class="panneau grille" hidden>
+    <section class="carte">
+      <h2>Sauvegarde et synchronisation</h2>
+      <p class="texte">Vos données restent dans cet appareil. Pour passer du téléphone au PC (ou l'inverse) :
+        <b>Exporter</b> ici, envoyez le fichier sur l'autre appareil (Nearby Share, AirDrop, câble, mail à vous-même), puis
+        <b>Importer et fusionner</b> là-bas. Rien n'est écrasé : les achats des deux appareils sont réunis.</p>
+      <div class="outils">
+        <button class="btn primaire" id="btnExport">Exporter (JSON)</button>
+        <button class="btn" id="btnExportCSV">Exporter le journal (CSV)</button>
+      </div>
+      <div class="outils">
+        <button class="btn" id="btnImport">Importer et fusionner…</button>
+        <button class="btn" id="btnRemplacer">Remplacer toutes mes données…</button>
+        <input type="file" id="fFichier" accept=".json,application/json" hidden>
+      </div>
+      <div class="info" id="infoSauvegarde"></div>
+    </section>
+    <section class="carte">
+      <h2>Réglages</h2>
+      <label class="en-ligne">Ouverture du PEA <input type="date" id="fOuverture"></label>
+      <div class="info" id="infoOuverture"></div>
+      <h3>Cours</h3>
+      <p class="texte">Source : Euronext Paris (clôtures officielles en EUR, ajustées des divisions). <span id="infoCours"></span></p>
+      <details>
+        <summary>Saisir un cours à la main (si Euronext ne répond plus)</summary>
+        <div class="outils">
+          <select id="fCoursEtf"></select>
+          <input type="date" id="fCoursDate">
+          <input type="number" id="fCoursPrix" min="0" step="0.0001" inputmode="decimal" placeholder="prix €" style="width:100px">
+          <button class="btn" id="btnCoursManuel">Enregistrer</button>
+        </div>
+      </details>
+      <h3>Divisions de parts</h3>
+      <div class="info" id="infoDivisions"></div>
+      <h3>Application</h3>
+      <div class="info" id="infoApp"></div>
+    </section>
+  </div>
+</div>
+
+<div class="accueil-vide" id="ecranVide" hidden>
+  <div class="carte">
+    <img src="icones/icone-192.png" alt="" width="64" height="64">
+    <h2>Bienvenue dans Investir PEA</h2>
+    <p class="texte">Aucune donnée dans cet appareil. Importez votre sauvegarde (par exemple <code>sauvegarde_initiale.json</code>
+      issue de l'Excel, ou un export de votre autre appareil).</p>
+    <div class="pied">
+      <button class="btn" id="btnDemarrerVide">Commencer sans données</button>
+      <button class="btn primaire" id="btnImportInitial">Importer une sauvegarde…</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
