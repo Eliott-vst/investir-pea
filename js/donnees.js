@@ -13,7 +13,8 @@ const lire = cle => { try { return JSON.parse(localStorage.getItem(cle)); } catc
 const ecrire = (cle, v) => localStorage.setItem(cle, JSON.stringify(v));
 
 export function vide() {
-  const t = maintenant();
+  // daté dans le passé : un import ou une fusion l'emporte toujours sur ces réglages par défaut
+  const t = "2000-01-01T00:00:00Z";
   return {
     format: FORMAT, version: 1,
     reglages: { ouverture: null, plafond: 150000, maj: t },
@@ -107,7 +108,7 @@ export function exportCSV(d) {
   }
   lignes.push("", ["Versements", "", "", "", "", "Montant (€)", ""].join(";"));
   for (const v of [...d.versements].sort((x, y) => x.date.localeCompare(y.date))) {
-    lignes.push([v.date, "", "", "", "", num(v.montant.toFixed(2)), v.note || "Versement"].join(";"));
+    lignes.push([v.date, "", "", "", "", num(v.montant.toFixed(2)), (v.note || "Versement") + (v.type === "ajustement" ? " (hors total versé)" : "")].join(";"));
   }
   return "﻿" + lignes.join("\r\n");
 }

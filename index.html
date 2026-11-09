@@ -43,7 +43,8 @@
       <div class="kpi"><div class="l">Valeur du PEA</div><div class="v" id="kValeur">—</div><div class="s" id="kValeurS">&nbsp;</div></div>
       <div class="kpi"><div class="l">Plus-value latente</div><div class="v" id="kPv">—</div><div class="s" id="kPvS">&nbsp;</div></div>
       <div class="kpi"><div class="l">Total versé</div><div class="v" id="kVerse">—</div><div class="s" id="kVerseS">&nbsp;</div></div>
-      <div class="kpi"><div class="l">Liquidités</div><div class="v" id="kLiq">—</div><div class="s">utilisées au prochain achat</div></div>
+      <div class="kpi"><div class="l">Liquidités</div><div class="v" id="kLiq">—</div>
+        <div class="kpi-actions"><button class="btn petit" data-virement>+ Virement</button><button class="btn petit" data-corriger>Corriger</button></div></div>
     </section>
     <section class="carte">
       <h2>Mes positions <span class="aide">poids calculé sur les lignes à cible &gt; 0 %</span></h2>
@@ -68,6 +69,11 @@
       <div class="outils">
         <button class="btn primaire" id="btnPlan">Préremplir mon plan</button>
         <span class="info" id="infoPlan"></span>
+      </div>
+      <div class="outils">
+        <span id="liqAchats"></span>
+        <button class="btn petit" data-virement>+ Virement reçu</button>
+        <button class="btn petit" data-corriger>Corriger mes liquidités</button>
       </div>
       <div class="outils">
         <label class="en-ligne">Montant à investir <input type="number" id="fMontant" min="0" step="10" inputmode="decimal" style="width:100px"> €</label>

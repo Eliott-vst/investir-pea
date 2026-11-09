@@ -86,8 +86,9 @@ export function positions(donnees, prix /* {isin: prix} */) {
 export function resume(donnees, lignes) {
   const titres = lignes.reduce((s, l) => s + (l.valeur || 0), 0);
   const investi = lignes.reduce((s, l) => s + l.cout, 0);
-  const verse = donnees.versements.reduce((s, v) => s + v.montant, 0);
-  const liquidites = arrondi(verse - investi);
+  // « ajustement » = correction des liquidités (intérêts, écart constaté) : compte dans les liquidités, pas dans le total versé
+  const verse = donnees.versements.filter(v => !estAjustement(v)).reduce((s, v) => s + v.montant, 0);
+  const liquidites = arrondi(donnees.versements.reduce((s, v) => s + v.montant, 0) - investi);
   const dates = donnees.achats.map(a => a.date).sort();
   return {
     titres, investi, verse, liquidites, valeur: titres + liquidites,
@@ -176,23 +177,29 @@ export function preremplirPlan(plan, closes, aujourdhui) {
   return { debut, executions, lignes };
 }
 
-/** Versé prérempli : montants du plan (une fois par exécution et par ETF) + montants des achats ponctuels. */
-export function verseAuto(ops) {
-  return ops.reduce((s, o) => s + (o.note === NOTE_PLAN ? (o.verse || 0) : (o.parts || 0) * (o.prix || 0)), 0);
+export const estAjustement = v => v.type === "ajustement";
+
+/** Versé prérempli : montants du plan (une fois par exécution et par ETF)
+ *  + pour les achats ponctuels, le virement prévu par le « montant à investir » (budget au-delà des liquidités)
+ *    ou, sans budget, ce qui manque une fois les liquidités utilisées. */
+export function verseAuto(ops, liquidites = 0, virement = null) {
+  const plan = ops.filter(o => o.note === NOTE_PLAN).reduce((s, o) => s + (o.verse || 0), 0);
+  const ponctuel = ops.filter(o => o.note !== NOTE_PLAN).reduce((s, o) => s + (o.parts || 0) * (o.prix || 0), 0);
+  // budget fixé (« montant à investir ») : le virement est plafonné à ce budget ; sinon on verse juste ce qui manque
+  return arrondi(plan + (virement != null ? virement : Math.max(0, ponctuel - Math.max(0, liquidites))));
 }
 
-/** Répartit le versé saisi par date d'achat (pour la courbe « total versé ») ; l'écart va à la dernière date. */
+/** Répartit le versé par date (pour la courbe « total versé ») : montants du plan à leur date d'exécution,
+ *  le reste à la date du dernier achat ponctuel (ou du dernier achat). */
 export function versementsParDate(ops, verse) {
+  if (!ops.length) return [];
   const parDate = {};
-  for (const o of ops) {
-    const m = o.note === NOTE_PLAN ? (o.verse || 0) : (o.parts || 0) * (o.prix || 0);
-    parDate[o.date] = (parDate[o.date] || 0) + m;
-  }
-  const dates = Object.keys(parDate).sort();
-  if (!dates.length) return [];
-  const ecart = verse - Object.values(parDate).reduce((a, b) => a + b, 0);
-  parDate[dates[dates.length - 1]] += ecart;
-  return dates.map(d => ({ date: d, montant: arrondi(parDate[d]) })).filter(v => Math.abs(v.montant) >= 0.005);
+  let plan = 0;
+  for (const o of ops.filter(o => o.note === NOTE_PLAN)) { parDate[o.date] = (parDate[o.date] || 0) + (o.verse || 0); plan += o.verse || 0; }
+  const ponctuels = ops.filter(o => o.note !== NOTE_PLAN).map(o => o.date).sort();
+  const dateReste = ponctuels.pop() || ops.map(o => o.date).sort().pop();
+  parDate[dateReste] = (parDate[dateReste] || 0) + verse - plan;
+  return Object.keys(parDate).sort().map(d => ({ date: d, montant: arrondi(parDate[d]) })).filter(v => Math.abs(v.montant) >= 0.005);
 }
 
 // ---------- historique quotidien ----------
@@ -213,7 +220,7 @@ export function historique(donnees, closes) {
     const avant = serie(closes[i]).filter(([d]) => d < debut).pop();
     if (avant) dernier[i] = avant[1];
   }
-  let ia = 0, iv = 0, investi = 0, verse = 0;
+  let ia = 0, iv = 0, investi = 0, verse = 0, ajuste = 0;
   const out = [];
   for (const d of jours) {
     while (ia < achats.length && achats[ia].date <= d) {
@@ -221,14 +228,17 @@ export function historique(donnees, closes) {
       parts[a.isin] = (parts[a.isin] || 0) + a.parts * facteurDivision(donnees.divisions, a.isin, a.date);
       investi += a.parts * a.prix;
     }
-    while (iv < versements.length && versements[iv].date <= d) verse += versements[iv++].montant;
+    while (iv < versements.length && versements[iv].date <= d) {
+      const v = versements[iv++];
+      if (estAjustement(v)) ajuste += v.montant; else verse += v.montant;
+    }
     let titres = 0;
     for (const i of isins) {
       const c = closes[i]?.[d];
       if (c != null) dernier[i] = c;
       if (parts[i] && dernier[i] != null) titres += parts[i] * dernier[i];
     }
-    const liquidites = verse - investi;
+    const liquidites = verse + ajuste - investi;
     out.push({ date: d, titres, investi, verse, liquidites, valeur: titres + liquidites,
                pv: titres - investi, pvPct: investi ? titres / investi - 1 : null });
   }

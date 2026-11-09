@@ -4,7 +4,7 @@ import * as D from "./donnees.js";
 import { actualiser as actualiserCours, provisoire, jourParis } from "./cours.js";
 import { courbe, barres } from "./graphiques.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.1.0";
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
 const CLE_EXPORT = "investir-pea:dernier-export";
@@ -50,8 +50,8 @@ function confirmer(titre, texte, libelleOk = "Confirmer", danger = false) {
 let DON = null;                       // données de l'utilisateur (persistées)
 let COURS = D.chargerCours();         // cache des clôtures
 let OPS = [];                         // achats en cours de saisie
-let VERSE_MANUEL = null;              // montant versé imposé (null = calcul auto)
-let VERSE_ORIGINE = "";
+let VERSE_MANUEL = null;              // montant versé saisi à la main (null = calcul auto)
+let BUDGET = 0;                       // « montant à investir » (liquidités comprises) de la dernière proposition
 let PERIODE = "max";
 let VUE = { lignes: [], resume: null, hist: [] };
 
@@ -62,7 +62,7 @@ const prixActuels = () => Object.fromEntries(etfs().map(e => [e.isin, C.dernierC
 
 function sauver() { DON.modifie = D.maintenant(); D.enregistrer(DON); }
 function sauverBrouillon() {
-  try { localStorage.setItem(CLE_BROUILLON, JSON.stringify({ ops: OPS, verse: VERSE_MANUEL })); } catch { /* plein */ }
+  try { localStorage.setItem(CLE_BROUILLON, JSON.stringify({ ops: OPS, verse: VERSE_MANUEL, budget: BUDGET })); } catch { /* plein */ }
 }
 
 function calculer() {
@@ -108,6 +108,7 @@ function accueil() {
   $("kVerse").textContent = eur(r.verse, 0);
   $("kVerseS").textContent = `marge sous le plafond : ${eur(r.marge, 0)}`;
   $("kLiq").innerHTML = `<span class="${r.liquidites < -0.005 ? "neg" : ""}">${eur(r.liquidites)}</span>`;
+  $("liqAchats").innerHTML = `Liquidités disponibles : <b class="${r.liquidites < -0.005 ? "neg" : ""}">${eur(r.liquidites)}</b>`;
 
   const echelle = Math.max(0.6, ...VUE.lignes.map(l => Math.max(l.poids || 0, l.cible)));
   $("posCorps").innerHTML = VUE.lignes.map(l => {
@@ -144,7 +145,7 @@ function prixDuJour(isin, date) {
 
 function ajouterLigne(o = {}) {
   const l = { date: o.date || aujourdhui(), isin: o.isin || etfs().find(e => e.cible > 0)?.isin || etfs()[0].isin,
-              parts: o.parts || 0, prix: o.prix ?? null, libelle: o.libelle || "", note: o.note || C.NOTE_ACHAT, verse: o.verse };
+              parts: o.parts || 0, prix: o.prix ?? null, libelle: o.libelle || "", note: o.note || C.NOTE_ACHAT, verse: o.verse, prop: !!o.prop };
   if (l.prix == null) Object.assign(l, prixDuJour(l.isin, l.date));
   OPS.push(l);
   return l;
@@ -167,22 +168,34 @@ function dessinerOps() {
   const debut = C.debutPlan(pl);
   $("infoPlan").textContent = total ? `${eur(total, 0)}/mois le ${pl.jour} · exécutions après le ${dFr(debut)}` : "aucun plan défini (onglet Stratégie)";
   $("btnPlan").disabled = !total;
-  $("infoProposer").textContent = VUE.resume.liquidites > 0.005 ? `+ ${eur(VUE.resume.liquidites)} de liquidités incluses` : "";
+  infoMontant();
 }
+const liqDispo = () => Math.max(0, VUE.resume.liquidites);
+const virementPrevu = () => (BUDGET > 0 ? Math.max(0, BUDGET - liqDispo()) : null);
+function infoMontant() {
+  const m = parseFloat($("fMontant").value) || 0, liq = liqDispo();
+  $("fMontant").placeholder = liq > 0.005 ? nf(liq, 2) : "";
+  $("infoProposer").textContent = !m ? (liq > 0.005 ? `liquidités comprises (vide = ${eur(liq)})` : "liquidités comprises")
+    : m <= liq + 0.005 ? `pris sur vos liquidités (${eur(liq)})`
+    : `${liq > 0.005 ? `${eur(liq)} de liquidités + ` : ""}virement à faire : ${eur(m - liq)}`;
+}
+$("fMontant").addEventListener("input", infoMontant);
 
 function majTotaux() {
-  const auto = C.verseAuto(OPS);
+  const auto = C.verseAuto(OPS, liqDispo(), virementPrevu());
   const verse = VERSE_MANUEL ?? auto;
   if (document.activeElement !== $("fVerse")) $("fVerse").value = OPS.length || VERSE_MANUEL != null ? verse.toFixed(2) : "";
-  $("infoVerse").textContent = VERSE_MANUEL != null ? `${VERSE_ORIGINE || "modifié à la main"} (calcul auto : ${eur(auto)})` : "prérempli : montants du plan + achats ponctuels";
+  $("infoVerse").textContent = VERSE_MANUEL != null ? `modifié à la main (calcul auto : ${eur(auto)})`
+    : "prérempli : montants du plan + virement nécessaire pour les achats ponctuels, après usage des liquidités";
   $("btnVerseAuto").hidden = VERSE_MANUEL == null;
-  const dispo = verse + Math.max(0, VUE.resume.liquidites);
+  const dispo = verse + liqDispo();
   const investi = OPS.reduce((s, o) => s + (o.parts || 0) * (o.prix || 0), 0);
   const reste = dispo - investi;
   $("tDispo").textContent = eur(dispo); $("tInvesti").textContent = eur(investi);
   $("tReste").textContent = eur(reste); $("tReste").className = reste < -0.005 ? "neg" : "";
   $("tNb").textContent = OPS.filter(o => o.parts > 0).length;
-  $("alerteOp").textContent = reste < -0.005 ? "Vous investissez plus que le versé + liquidités : vérifiez le montant versé." : "";
+  $("alerteOp").textContent = reste < -0.005 ? `Il manque ${eur(-reste)} : réduisez les parts ou augmentez le montant versé.` : "";
+  $("btnValider").disabled = reste < -0.005 || !OPS.some(o => o.parts > 0);
   sauverBrouillon();
 }
 
@@ -216,8 +229,8 @@ $("opsCorps").addEventListener("click", ev => {
   }
 });
 $("btnAjouter").onclick = () => { ajouterLigne(); dessinerOps(); };
-$("btnVider").onclick = () => { OPS = []; VERSE_MANUEL = null; dessinerOps(); };
-$("fVerse").addEventListener("input", () => { VERSE_MANUEL = parseFloat($("fVerse").value) || 0; VERSE_ORIGINE = ""; majTotaux(); });
+$("btnVider").onclick = () => { OPS = []; VERSE_MANUEL = null; BUDGET = 0; $("fMontant").value = ""; dessinerOps(); };
+$("fVerse").addEventListener("input", () => { VERSE_MANUEL = parseFloat($("fVerse").value) || 0; majTotaux(); });
 $("btnVerseAuto").onclick = () => { VERSE_MANUEL = null; majTotaux(); };
 
 $("btnPlan").onclick = () => {
@@ -236,20 +249,28 @@ function prochaineExecution() {
   return e > t ? e : C.executionPlan(DON.plan.jour, m === 12 ? a + 1 : a, m === 12 ? 1 : m + 1);
 }
 
+// « Montant à investir » = budget total, liquidités comprises (vide = toutes les liquidités).
+// Une nouvelle proposition remplace la précédente ; les autres lignes saisies sont déduites du budget.
 $("btnProposer").onclick = () => {
-  const montant = parseFloat($("fMontant").value) || 0;
-  const liq = Math.max(0, VUE.resume.liquidites);
-  if (montant + liq <= 0) return toast("Indiquez le montant à investir.", true);
-  const lignes = VUE.lignes.filter(l => l.prix).map(l => ({ isin: l.isin, parts: l.parts, prix: l.prix, cible: l.cible }));
-  const r = C.repartir(lignes, montant + liq);
+  const saisi = $("fMontant").value.trim();
+  const montant = saisi ? parseFloat(saisi) || 0 : liqDispo();
+  if (montant <= 0) return toast("Indiquez le montant à investir (ou ajoutez d'abord un virement).", true);
+  OPS = OPS.filter(o => !o.prop);
+  const autres = OPS.filter(o => o.note !== C.NOTE_PLAN).reduce((s, o) => s + (o.parts || 0) * (o.prix || 0), 0);
+  const budget = montant - autres;
+  BUDGET = montant; VERSE_MANUEL = null;
+  if (budget <= 0) { dessinerOps(); return toast(`Les achats déjà saisis (${eur(autres)}) utilisent tout le montant.`, true); }
+  const enCours = {};
+  for (const o of OPS) enCours[o.isin] = (enCours[o.isin] || 0) + (o.parts || 0);
+  const lignes = VUE.lignes.filter(l => l.prix).map(l => ({ isin: l.isin, parts: l.parts + (enCours[l.isin] || 0), prix: l.prix, cible: l.cible }));
+  const r = C.repartir(lignes, budget);
   const achats = Object.entries(r.achats).filter(([, n]) => n > 0);
-  if (!achats.length) return toast("Montant trop faible pour acheter une part des lignes en retard.");
+  if (!achats.length) { dessinerOps(); return toast("Montant trop faible pour acheter une part des lignes en retard."); }
   const t = aujourdhui();
-  achats.forEach(([isin, n]) => ajouterLigne({ isin, parts: n, date: t, note: C.NOTE_ACHAT, ...prixDuJour(isin, t) }));
-  if (montant !== C.verseAuto(OPS) && OPS.every(o => o.note !== C.NOTE_PLAN)) { VERSE_MANUEL = montant; VERSE_ORIGINE = "= montant à investir"; }
+  achats.forEach(([isin, n]) => ajouterLigne({ isin, parts: n, date: t, note: C.NOTE_ACHAT, prop: true, ...prixDuJour(isin, t) }));
   dessinerOps();
   const apres = C.poidsApres(lignes, r.achats);
-  toast(`Proposition ajoutée (reste ${eur(r.reste)}). Poids après : ${achats.map(([i]) => `${nomEtf(i)} ${pct(apres[i])}`).join(", ")}. Passez vos ordres puis ajustez parts et prix réels.`);
+  toast(`Proposition pour ${eur(montant)} (reste ${eur(r.reste)}, gardé en liquidités). Poids après : ${achats.map(([i]) => `${nomEtf(i)} ${pct(apres[i])}`).join(", ")}.`);
 };
 
 $("btnValider").onclick = () => {
@@ -257,14 +278,14 @@ $("btnValider").onclick = () => {
   if (!lignes.length) return toast("Ajoutez au moins un achat avec des parts.", true);
   if (lignes.some(o => !(o.prix > 0))) return toast("Il manque un prix.", true);
   if (lignes.some(o => o.date > aujourdhui())) return toast("Une date n'est pas encore arrivée.", true);
-  const verse = VERSE_MANUEL ?? C.verseAuto(OPS);
+  const verse = VERSE_MANUEL ?? C.verseAuto(OPS, liqDispo(), virementPrevu());
   const investi = lignes.reduce((s, o) => s + o.parts * o.prix, 0);
   const liqAvant = VUE.resume.liquidites;
   const liqApres = liqAvant + verse - investi;
+  if (liqApres < -0.005) return toast(`Vous ne pouvez pas investir plus que vos liquidités + le versé (il manque ${eur(-liqApres)}).`, true);
   const v = modale(`<h3>Enregistrer ${lignes.length} achat${lignes.length > 1 ? "s" : ""} ?</h3>
     <ul>${[...lignes].sort((a, b) => a.date.localeCompare(b.date)).map(o => `<li>${dFr(o.date)} · ${o.parts} × ${esc(nomEtf(o.isin))} à ${eur(o.prix, 4)} = <b>${eur(o.parts * o.prix)}</b> <span class="etiquette ${o.note === C.NOTE_PLAN ? "plan" : ""}">${o.note === C.NOTE_PLAN ? "Plan" : "Ponctuel"}</span></li>`).join("")}</ul>
     <div>Investi <b>${eur(investi)}</b> · versé <b>+${eur(verse)}</b> · liquidités ${eur(liqAvant)} → <b class="${liqApres < -0.005 ? "neg" : ""}">${eur(liqApres)}</b></div>
-    ${liqApres < -0.005 ? `<div class="rappel">Les liquidités deviendraient négatives : le montant versé est sans doute trop faible.</div>` : ""}
     <div class="texte">Seront mis à jour : parts, PRU, journal, total versé, liquidités${lignes.some(o => o.note === C.NOTE_PLAN) ? " et date de dernière exécution du plan" : ""}.</div>
     <div class="pied"><button class="btn" id="mAnnuler">Annuler</button><button class="btn vert" id="mOk">Enregistrer</button></div>`);
   $("mAnnuler").onclick = () => v.remove();
@@ -278,7 +299,7 @@ $("btnValider").onclick = () => {
     if (plans.length) DON.plan = { ...DON.plan, dernier: [DON.plan.dernier, ...plans].filter(Boolean).sort().pop() };
     DON.achats.sort((a, b) => a.date.localeCompare(b.date));
     sauver();
-    v.remove(); OPS = []; VERSE_MANUEL = null; $("fMontant").value = "";
+    v.remove(); OPS = []; VERSE_MANUEL = null; BUDGET = 0; $("fMontant").value = "";
     tout();
     toast(`${lignes.length} achat(s) enregistré(s) ✓  Liquidités : ${eur(VUE.resume.liquidites)}`);
   };
@@ -364,6 +385,59 @@ $("btnRecalcul").onclick = () => {
   };
 };
 
+// ---------- liquidités ----------
+function ajouterMouvement(m) {
+  DON.versements.push({ id: D.nouvelId(), cree: D.maintenant(), ...m });
+  DON.versements.sort((a, b) => a.date.localeCompare(b.date));
+  sauver(); tout();
+}
+function modaleVirement() {
+  const v = modale(`<h3>Virement reçu sur le PEA</h3>
+    <div class="texte">Argent viré sur votre compte PEA Trade Republic. Il s'ajoute au total versé et aux liquidités ;
+      « Montant à investir → Proposer » l'utilisera ensuite.</div>
+    <div class="champs">
+      <label>Date du virement <input type="date" id="mvDate" value="${aujourdhui()}" max="${aujourdhui()}"></label>
+      <label>Montant (€) <input type="number" id="mvMontant" min="0" step="0.01" inputmode="decimal"></label>
+    </div>
+    <div class="pied"><button class="btn" data-annuler>Annuler</button><button class="btn vert" data-ok>Enregistrer</button></div>`);
+  v.querySelector("[data-annuler]").onclick = () => v.remove();
+  v.querySelector("#mvMontant").focus();
+  v.querySelector("[data-ok]").onclick = () => {
+    const montant = parseFloat(v.querySelector("#mvMontant").value), date = v.querySelector("#mvDate").value;
+    if (!(montant > 0) || !date) return toast("Indiquez la date et un montant positif.", true);
+    v.remove();
+    ajouterMouvement({ date, montant: Math.round(montant * 100) / 100, note: "Virement" });
+    toast(`Virement de ${eur(montant)} enregistré ✓  Liquidités : ${eur(VUE.resume.liquidites)}`);
+  };
+}
+function modaleCorriger() {
+  const actuel = VUE.resume.liquidites;
+  const v = modale(`<h3>Corriger mes liquidités</h3>
+    <div class="texte">Indiquez les espèces affichées sur votre PEA dans Trade Republic. L'écart avec l'application
+      (${eur(actuel)}) est enregistré comme une correction : il change les liquidités mais <b>pas</b> le total versé
+      (intérêts, arrondis…). Pour un virement, utilisez plutôt « + Virement ».</div>
+    <div class="champs">
+      <label>Liquidités réelles (€) <input type="number" id="mcMontant" min="0" step="0.01" inputmode="decimal" value="${Math.max(0, actuel).toFixed(2)}"></label>
+      <div class="info" id="mcEcart"></div>
+    </div>
+    <div class="pied"><button class="btn" data-annuler>Annuler</button><button class="btn vert" data-ok>Enregistrer</button></div>`);
+  const champ = v.querySelector("#mcMontant");
+  const ecart = () => (parseFloat(champ.value) || 0) - actuel;
+  champ.oninput = () => { v.querySelector("#mcEcart").textContent = `Correction : ${eurS(ecart(), 2)}`; };
+  champ.oninput(); champ.select();
+  v.querySelector("[data-annuler]").onclick = () => v.remove();
+  v.querySelector("[data-ok]").onclick = () => {
+    const e = Math.round(ecart() * 100) / 100;
+    if (!(parseFloat(champ.value) >= 0)) return toast("Indiquez un montant positif ou nul.", true);
+    v.remove();
+    if (Math.abs(e) < 0.005) return toast("Liquidités déjà à jour.");
+    ajouterMouvement({ date: aujourdhui(), montant: e, type: "ajustement", note: "Correction des liquidités" });
+    toast(`Liquidités corrigées ✓  ${eur(VUE.resume.liquidites)}`);
+  };
+}
+document.querySelectorAll("[data-virement]").forEach(b => b.onclick = modaleVirement);
+document.querySelectorAll("[data-corriger]").forEach(b => b.onclick = modaleCorriger);
+
 // ---------- journal ----------
 function journal() {
   const filtre = $("jFiltre").value;
@@ -377,8 +451,8 @@ function journal() {
     <td><button class="suppr" data-suppr title="Supprimer cet achat" aria-label="Supprimer cet achat">×</button></td></tr>`).join("")
     || `<tr><td colspan="7" class="vide">Aucun achat.</td></tr>`;
   const vs = [...DON.versements].reverse();
-  $("vInfo").textContent = `${vs.length} versements · total ${eur(VUE.resume.verse)}`;
-  $("vCorps").innerHTML = vs.map(v => `<tr data-id="${esc(v.id)}"><td>${dFr(v.date)}</td><td class="info">${esc(v.note || "Versement")}</td>
+  $("vInfo").textContent = `${vs.length} mouvements · total versé ${eur(VUE.resume.verse)}`;
+  $("vCorps").innerHTML = vs.map(v => `<tr data-id="${esc(v.id)}"><td>${dFr(v.date)}</td><td class="info">${esc(v.note || "Versement")}${C.estAjustement(v) ? " (hors total versé)" : ""}</td>
     <td class="n">${eur(v.montant)}</td><td><button class="suppr" data-suppr title="Supprimer ce versement" aria-label="Supprimer ce versement">×</button></td></tr>`).join("")
     || `<tr><td colspan="4" class="vide">Aucun versement.</td></tr>`;
 }
@@ -536,7 +610,7 @@ function demarrer() {
   $("ecranVide").hidden = true;
   try {
     const b = JSON.parse(localStorage.getItem(CLE_BROUILLON) || "null");
-    if (b?.ops?.length) { OPS = b.ops; VERSE_MANUEL = b.verse ?? null; }
+    if (b?.ops?.length) { OPS = b.ops; VERSE_MANUEL = b.verse ?? null; BUDGET = b.budget || 0; }
   } catch { /* brouillon illisible */ }
   tout();
   let onglet = "accueil";
