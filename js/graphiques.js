@@ -119,7 +119,10 @@ export function courbe(conteneur, opts) {
   capte.addEventListener("pointerleave", cacher);
 }
 
-/** Barres horizontales autour de zéro. items : [{nom, couleur, valeur, texte, detail}] */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/** Barres horizontales autour de zéro. items : [{nom, couleur, valeur, texte, detail, sous}]
+ *  detail : petit texte sous la valeur ; sous : ligne explicative sous la barre (toute la largeur). */
 export function barres(conteneur, items, opts = {}) {
   const maxAbs = Math.max(...items.map(i => Math.abs(i.valeur || 0)), 1e-9);
   const aNeg = items.some(i => i.valeur < 0), aPos = items.some(i => i.valeur > 0);
@@ -128,84 +131,12 @@ export function barres(conteneur, items, opts = {}) {
   conteneur.innerHTML = `<div class="barres">${items.map(i => {
     const w = Math.abs(i.valeur || 0) / maxAbs * echelle;
     const gauche = i.valeur < 0 ? zero - w : zero;
-    return `<div class="barre-ligne" title="${i.nom} : ${i.texte}${i.detail ? " · " + i.detail : ""}">
-      <span class="barre-nom">${opts.pastilles === false ? "" : `<i class="pastille" style="background:${i.couleur}"></i>`}${i.nom}</span>
+    return `<div class="barre-ligne" title="${esc(i.nom)} : ${esc(i.texte)}${i.detail ? " · " + esc(i.detail) : ""}">
+      <span class="barre-nom">${opts.pastilles === false ? "" : `<i class="pastille" style="background:${i.couleur}"></i>`}${esc(i.nom)}</span>
       <span class="barre-piste">${aNeg && aPos ? `<b class="barre-zero" style="left:${zero}%"></b>` : ""}
         <i class="barre-val" style="left:${gauche}%;width:${Math.max(w, 0.5)}%;background:${i.couleur}"></i></span>
-      <span class="barre-txt n">${i.texte}${i.detail ? `<small>${i.detail}</small>` : ""}</span></div>`;
-  }).join("")}</div>${opts.note ? `<div class="note-graphe">${opts.note}</div>` : ""}`;
+      <span class="barre-txt n">${esc(i.texte)}${i.detail ? `<small>${esc(i.detail)}</small>` : ""}</span>
+      ${i.sous ? `<span class="barre-sous">${esc(i.sous)}</span>` : ""}</div>`;
+  }).join("")}</div>${opts.note ? `<div class="note-graphe">${esc(opts.note)}</div>` : ""}`;
 }
 
-/** Colonnes empilées (une par catégorie, ex. un mois). opts : { categories: [libellé], series: [{nom, couleur, valeurs}],
- *  format, formatAxe, libelleAxe: i => texte|null, titreBulle: i => texte } */
-export function colonnes(conteneur, opts) {
-  conteneur.classList.add("graphe");
-  conteneur.innerHTML = "";
-  const { categories, series } = opts;
-  if (!categories.length) { conteneur.innerHTML = `<div class="vide">Pas encore de données.</div>`; return; }
-  const leg = document.createElement("div"); leg.className = "legende";
-  leg.innerHTML = series.map(s => `<span><i class="carre" style="--c:${s.couleur}"></i>${s.nom}</span>`).join("");
-  conteneur.appendChild(leg);
-  const zone = document.createElement("div"); zone.className = "graphe-zone"; conteneur.appendChild(zone);
-  const bulle = document.createElement("div"); bulle.className = "bulle"; bulle.hidden = true; zone.appendChild(bulle);
-
-  const L = Math.max(280, zone.clientWidth || conteneur.clientWidth || 600);
-  const H = opts.hauteur || (L < 500 ? 200 : 240);
-  const totaux = categories.map((_, i) => series.reduce((s, x) => s + (x.valeurs[i] || 0), 0));
-  const ticks = graduations(0, Math.max(...totaux, 1));
-  const max = ticks[ticks.length - 1];
-  const fa = opts.formatAxe || opts.format;
-  const m = { h: 10, b: 24, g: 10 + Math.max(...ticks.map(t => fa(t).length)) * 6.6, d: 4 };
-  const pas = (L - m.g - m.d) / categories.length;
-  const larg = Math.max(2, Math.min(28, pas - 3));
-  const y = v => m.h + (1 - v / max) * (H - m.h - m.b);
-  const svg = el("svg", { viewBox: `0 0 ${L} ${H}`, width: L, height: H, role: "img", "aria-label": opts.titre || "graphique" });
-  for (const t of ticks) {
-    svg.appendChild(el("line", { x1: m.g, x2: L - m.d, y1: y(t), y2: y(t), class: t === 0 ? "axe-zero" : "grille" }));
-    const tx = el("text", { x: m.g - 6, y: y(t) + 4, "text-anchor": "end", class: "axe" }); tx.textContent = fa(t); svg.appendChild(tx);
-  }
-  const survol = el("rect", { y: m.h, height: H - m.h - m.b, width: pas, class: "survol", visibility: "hidden" });
-  svg.appendChild(survol);
-  let dernierX = -1e9;
-  categories.forEach((c, i) => {
-    const x = m.g + i * pas + (pas - larg) / 2;
-    let bas = 0;
-    const visibles = series.map((s, k) => [k, s.valeurs[i] || 0]).filter(([, v]) => v > 0);
-    visibles.forEach(([k, v], n) => {
-      const haut = bas + v;
-      const y1 = y(haut), y0 = y(bas);
-      const gap = n > 0 ? 2 : 0;                       // 2 px de séparation entre segments
-      const h = Math.max(0, y0 - gap - y1);
-      const dessus = n === visibles.length - 1, r = Math.min(4, larg / 2, h);
-      const d = dessus
-        ? `M${x},${y0 - gap}V${y1 + r}Q${x},${y1} ${x + r},${y1}H${x + larg - r}Q${x + larg},${y1} ${x + larg},${y1 + r}V${y0 - gap}Z`
-        : `M${x},${y0 - gap}V${y1}H${x + larg}V${y0 - gap}Z`;
-      svg.appendChild(el("path", { d, fill: series[k].couleur }));
-      bas = haut;
-    });
-    const lib = opts.libelleAxe ? opts.libelleAxe(i) : c;
-    const cx = m.g + i * pas + pas / 2;
-    if (lib && cx - dernierX >= 40) {
-      dernierX = cx;
-      const tx = el("text", { x: cx, y: H - 6, "text-anchor": "middle", class: "axe" }); tx.textContent = lib; svg.appendChild(tx);
-    }
-  });
-  const capte = el("rect", { x: m.g, y: 0, width: L - m.g - m.d, height: H, fill: "transparent" });
-  svg.appendChild(capte);
-  zone.appendChild(svg);
-  const montrer = ev => {
-    const r = svg.getBoundingClientRect();
-    const px = (ev.clientX - r.left) * (L / r.width);
-    const i = Math.max(0, Math.min(categories.length - 1, Math.floor((px - m.g) / pas)));
-    survol.setAttribute("x", m.g + i * pas); survol.setAttribute("visibility", "visible");
-    bulle.innerHTML = `<b>${opts.titreBulle ? opts.titreBulle(i) : categories[i]}</b>`
-      + series.map(s => `<div><i style="--c:${s.couleur}"></i><span>${s.nom}</span><b>${opts.format(s.valeurs[i] || 0)}</b></div>`).join("")
-      + `<div><span>Total</span><b>${opts.format(totaux[i])}</b></div>`;
-    bulle.hidden = false;
-    const bx = (m.g + i * pas + pas / 2) * (r.width / L), bw = bulle.offsetWidth;
-    bulle.style.left = Math.max(0, Math.min(r.width - bw, bx + (bx > r.width / 2 ? -bw - 12 : 12))) + "px";
-  };
-  capte.addEventListener("pointermove", montrer);
-  capte.addEventListener("pointerdown", montrer);
-  capte.addEventListener("pointerleave", () => { survol.setAttribute("visibility", "hidden"); bulle.hidden = true; });
-}

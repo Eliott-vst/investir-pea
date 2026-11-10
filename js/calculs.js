@@ -257,43 +257,6 @@ export function historique(donnees, closes) {
   return out;
 }
 
-// ---------- projection ----------
-
-/** Valeur future mois par mois avec un versement mensuel et un rendement annuel (capitalisation mensuelle).
- *  → [{mois, valeur, verse}] (mois 0 = aujourd'hui) */
-export function projection(valeur, verse, mensuel, rendementAnnuel, mois = 120) {
-  const r = (1 + rendementAnnuel) ** (1 / 12) - 1;
-  const out = [{ mois: 0, valeur, verse }];
-  for (let m = 1; m <= mois; m++) {
-    valeur = valeur * (1 + r) + mensuel;
-    verse += mensuel;
-    out.push({ mois: m, valeur, verse });
-  }
-  return out;
-}
-
-/** Montant investi par mois, séparé plan d'épargne / achats ponctuels. → [{mois: "AAAA-MM", plan, ponctuel}] */
-export function investiParMois(achats) {
-  const m = {};
-  for (const a of achats) {
-    const k = a.date.slice(0, 7);
-    m[k] ||= { mois: k, plan: 0, ponctuel: 0 };
-    m[k][a.note === NOTE_PLAN ? "plan" : "ponctuel"] += a.parts * a.prix;
-  }
-  const cles = Object.keys(m).sort();
-  if (!cles.length) return [];
-  const out = [];
-  let [an, mo] = cles[0].split("-").map(Number);
-  const fin = cles[cles.length - 1];
-  for (;;) {                                           // mois sans achat inclus (barre vide)
-    const k = `${an}-${String(mo).padStart(2, "0")}`;
-    out.push(m[k] || { mois: k, plan: 0, ponctuel: 0 });
-    if (k >= fin) break;
-    if (++mo > 12) { mo = 1; an++; }
-  }
-  return out;
-}
-
 // ---------- statistiques d'un titre (à partir des clôtures) ----------
 
 /** → {date, prix, veille, perf: {m1, m3, m6, ytd, a1}, haut52, bas52, volatilite, pireBaisse: {valeur, date}, debut} */
@@ -344,6 +307,12 @@ export function allocation(lignes, fiches, cle) {
   return Object.entries(m).filter(([, v]) => v > 0.00005).sort((a, b) => fin(a[0]) - fin(b[0]) || b[1] - a[1]);
 }
 
+/** Clé d'une entreprise pour regrouper « Banco Santander SA » et « Banco Santander » (formes juridiques ignorées). */
+export const cleEntreprise = nom => nom.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/\(.*?\)/g, " ").replace(/[.,&'’-]/g, " ")
+  .replace(/\b(corp|corporation|inc|sa|ag|nv|plc|spa|se|abp|oyj|ltd|limited|co|holdings?|group|groep|the)\b/g, " ")
+  .replace(/\s+/g, " ").trim();
+
 /** Principales positions sous-jacentes, cumulées entre ETF (parmi les 10 premières de chaque fiche). */
 export function positionsCumulees(lignes, fiches, n = 10) {
   const total = lignes.reduce((t, l) => t + Math.max(0, l.valeur || 0), 0);
@@ -351,10 +320,31 @@ export function positionsCumulees(lignes, fiches, n = 10) {
   const m = {};
   for (const l of lignes) {
     const w = Math.max(0, l.valeur || 0) / total;
-    for (const [nom, p] of fiches[l.isin]?.top || []) m[nom] = (m[nom] || 0) + w * p / 100;
+    for (const [nom, p] of fiches[l.isin]?.top || []) {
+      const k = cleEntreprise(nom) || nom;
+      m[k] ||= { nom, v: 0 };
+      if (nom.length < m[k].nom.length) m[k].nom = nom;        // le libellé le plus court est le plus lisible
+      m[k].v += w * p / 100;
+    }
   }
-  return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+  return Object.values(m).sort((a, b) => b.v - a.v).slice(0, n).map(x => [x.nom, x.v]);
 }
+
+/** Volatilité annualisée sur un an d'une suite de valeurs quotidiennes (indice du PEA hors versements). */
+export function volatiliteAnnuelle(points /* [[date, valeur]] triés */) {
+  if (points.length < 2) return null;
+  const fin = points[points.length - 1][0], debut = ajouterJours(fin, -365);
+  const an = points.filter(([d]) => d > debut);
+  const r = [];
+  for (let i = 1; i < an.length; i++) if (an[i - 1][1] > 0 && an[i][1] > 0) r.push(Math.log(an[i][1] / an[i - 1][1]));
+  if (r.length < 20) return null;
+  const moy = r.reduce((a, b) => a + b, 0) / r.length;
+  return Math.sqrt(r.reduce((a, x) => a + (x - moy) ** 2, 0) / (r.length - 1) * 252);
+}
+
+/** Tranches de volatilité (comme les comparateurs d'ETF). */
+export const TRANCHES_VOL = [[0, 0.10, "moins de 10 %"], [0.10, 0.15, "10 – 14,99 %"], [0.15, 0.20, "15 – 19,99 %"],
+                             [0.20, 0.25, "20 – 24,99 %"], [0.25, Infinity, "25 % et plus"]];
 
 /** Regroupe la valeur des lignes selon un champ de la fiche (émetteur, réplication…). */
 export function repartitionPar(lignes, fiches, champ) {

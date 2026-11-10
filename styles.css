@@ -187,6 +187,12 @@ button.etiquette{cursor:pointer}
 .resultat small{display:block;color:var(--doux);font-size:12px}
 .champs textarea{background:var(--champ);border:1px solid var(--trait);border-radius:7px;padding:6px 9px;color:var(--encre);font:12.5px/1.4 var(--chiffres);min-height:110px;resize:vertical}
 .champs .deux{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.coller{background:var(--marine-doux);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.coller[open]{gap:8px}
+.coller ol{margin:4px 0;padding-left:20px}
+.coller textarea{width:100%;min-height:90px;background:var(--carte);border:1px solid var(--trait);border-radius:7px;padding:6px 9px;color:var(--encre);font:12px/1.4 var(--chiffres)}
+.barre-txt small{display:block}
+.barre-sous{grid-column:1/-1;font-size:12px;color:var(--doux);margin-top:-2px}
 .bulle{position:absolute;top:4px;pointer-events:none;background:var(--carte);border:1px solid var(--trait);border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);min-width:170px;z-index:2}
 .bulle > b{display:block;margin-bottom:3px;font-weight:600}
 .bulle div{display:flex;align-items:center;gap:6px}

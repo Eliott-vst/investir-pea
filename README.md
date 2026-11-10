@@ -14,6 +14,7 @@ positions, achats et stratégie restent dans le stockage local de chaque apparei
 | `js/donnees.js` | stockage local, export JSON/CSV, import avec fusion |
 | `js/graphiques.js` | graphiques SVG (aucune bibliothèque) |
 | `js/fiches.js` | fiches d'identité et composition des ETF (données statiques, à mettre à jour tous les 6 mois) |
+| `js/justetf.js` | lecture d'une page justETF copiée-collée pour remplir une fiche |
 | `sw.js`, `manifest.webmanifest`, `icones/` | installation et fonctionnement hors ligne |
 | `tests/` (non publié) | tests locaux des calculs sur mes données réelles |
 

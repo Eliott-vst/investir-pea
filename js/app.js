@@ -2,10 +2,11 @@
 import * as C from "./calculs.js";
 import * as D from "./donnees.js";
 import { actualiser as actualiserCours, provisoire, jourParis, rechercher, PLACES } from "./cours.js";
-import { courbe, colonnes, barres } from "./graphiques.js";
+import { courbe, barres } from "./graphiques.js";
+import { lirePageJustETF } from "./justetf.js";
 import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.4.0";
+export const VERSION = "1.5.0";
 // palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
@@ -535,50 +536,9 @@ function graphiques() {
     format: v => pct(v), formatAxe: v => nf(Math.round(v * 100) || 0, 0) + " %",
     bulle: i => suivies.map(e => [e.court, `${pct(poids[i][e.isin])} / ${pct(e.cible, false, 0)}`, couleur(e.isin)]) });
 
-  // investi par mois
-  const debutMois = dates[0]?.slice(0, 7) || "";
-  const mois = C.investiParMois(DON.achats).filter(m => m.mois >= debutMois);
-  const totalPeriode = mois.reduce((s, m) => s + m.plan + m.ponctuel, 0);
-  $("gMoisInfo").textContent = mois.length ? `${eur(totalPeriode, 0)} sur la période · ${eur(totalPeriode / mois.length, 0)}/mois en moyenne` : "";
-  const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
-  colonnes($("gMois"), { titre: "Investi par mois", categories: mois.map(m => m.mois),
-    series: [{ nom: "Plan d'épargne", couleur: "var(--e1)", valeurs: mois.map(m => m.plan) },
-             { nom: "Achats ponctuels", couleur: "var(--e2)", valeurs: mois.map(m => m.ponctuel) }],
-    format: v => eur(v, 0), formatAxe: k,
-    libelleAxe: i => { const [a, mo] = mois[i].mois.split("-"); return +mo === 1 ? a : MOIS[+mo - 1]; },
-    titreBulle: i => { const [a, mo] = mois[i].mois.split("-"); return `${MOIS[+mo - 1]} ${a}`; } });
-
-  projectionGraphe();
 }
 
-function projectionGraphe() {
-  const r = VUE.resume;
-  const plan = Object.values(DON.plan.montants || {}).reduce((a, b) => a + b, 0);
-  if ($("fProjMensuel").value === "") $("fProjMensuel").value = plan || 500;
-  const mensuel = parseFloat($("fProjMensuel").value) || 0;
-  const taux = [0.05, 0.07, 0.09];
-  const scen = taux.map(t => C.projection(r.valeur, r.verse, mensuel, t));
-  const t0 = aujourdhui();
-  const [a0, m0] = t0.split("-").map(Number);
-  const dates = scen[0].map(p => { const m = m0 - 1 + p.mois; return `${a0 + Math.floor(m / 12)}-${String(m % 12 + 1).padStart(2, "0")}-01`; });
-  const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
-  const moisFr = d => `${MOIS[+d.slice(5, 7) - 1]} ${d.slice(0, 4)}`;
-  const reste = (DON.reglages.plafond || 150000) - r.verse;
-  const nPlafond = mensuel > 0 ? Math.ceil(reste / mensuel) : null;
-  const dPlafond = nPlafond == null ? null : (() => { const m = m0 - 1 + nPlafond; return `${a0 + Math.floor(m / 12)}-${String(m % 12 + 1).padStart(2, "0")}-01`; })();
-  $("gProjInfo").textContent = nPlafond == null ? "" : `plafond de versements (${eur(DON.reglages.plafond || 150000, 0)}) atteint vers ${moisFr(dPlafond)} à ce rythme`;
-  const fin = scen.map(s => s[s.length - 1]);
-  $("gProjChiffres").innerHTML = taux.map((t, i) => `<div><span>Dans 10 ans à ${nf(t * 100, 0)} %/an</span><b>${eur(fin[i].valeur, 0)}</b><small>dont ${eur(fin[i].verse, 0)} versés</small></div>`).join("");
-  const k = v => Math.abs(v) >= 1000 ? nf(v / 1000, 0) + " k€" : nf(v, 0) + " €";
-  const teinte = p => `color-mix(in srgb, var(--e1) ${p}%, var(--carte))`;
-  courbe($("gProj"), { dates, titre: "Projection à 10 ans", pasMois: 12, titreBulle: moisFr,
-    series: [{ nom: "à 9 %/an", couleur: teinte(100), valeurs: scen[2].map(p => p.valeur) },
-             { nom: "à 7 %/an", couleur: teinte(70), valeurs: scen[1].map(p => p.valeur) },
-             { nom: "à 5 %/an", couleur: teinte(45), valeurs: scen[0].map(p => p.valeur) },
-             { nom: "Total versé", couleur: "var(--verse)", valeurs: scen[0].map(p => p.verse), pointille: true }],
-    format: v => eur(v, 0), formatAxe: k });
-}
-$("fProjMensuel").addEventListener("input", () => { clearTimeout(window.__proj); window.__proj = setTimeout(projectionGraphe, 200); });
+
 document.querySelectorAll("[data-periode]").forEach(b => b.onclick = () => {
   PERIODE = b.dataset.periode === "max" || b.dataset.periode === "ytd" ? b.dataset.periode : +b.dataset.periode;
   document.querySelectorAll("[data-periode]").forEach(x => x.classList.toggle("actif", x === b));
@@ -758,7 +718,18 @@ function modifierFiche(isin) {
   const e = etfs().find(x => x.isin === isin), f = ficheDe(isin) || {};
   const champ = (id, lib, val, type = "text") => `<label>${lib}<input id="${id}" type="${type}" value="${esc(val ?? "")}"${type === "number" ? ' step="0.01" inputmode="decimal"' : ""}></label>`;
   const v = modale(`<h3>Fiche ${esc(e.court)}</h3>
-    <div class="texte">Recopiez la fiche mensuelle de l'émetteur (tous les 6 mois environ). Pour les listes : une ligne par élément, « Nom ; pourcentage ».</div>
+    <div class="texte">Tous les 6 mois environ. Le plus simple : remplissez depuis justETF. Sinon, recopiez la fiche mensuelle de l'émetteur
+      (listes : une ligne par élément, « Nom ; pourcentage »).</div>
+    <details class="coller" ${f.au ? "" : "open"}>
+      <summary>Remplir depuis justETF</summary>
+      <ol class="texte">
+        <li>Ouvrez <a href="https://www.justetf.com/fr/etf-profile.html?isin=${esc(isin)}" target="_blank" rel="noopener">la page justETF de ce fonds</a>.</li>
+        <li>Sélectionnez toute la page (Ctrl+A, ou appui long → « Tout sélectionner » sur téléphone) et copiez-la.</li>
+        <li>Collez ci-dessous puis touchez « Lire la page ».</li>
+      </ol>
+      <textarea id="mfColle" placeholder="Collez ici le texte de la page justETF"></textarea>
+      <div class="pied"><span class="note" id="mfColleInfo"></span><button class="btn primaire" data-lire>Lire la page</button></div>
+    </details>
     <div class="champs">
       <div class="deux">${champ("mfCourt", "Nom court", e.court)}${champ("mfAu", "Données au", f.au, "date")}</div>
       ${champ("mfNom", "Nom complet", e.nom)}
@@ -777,6 +748,23 @@ function modifierFiche(isin) {
       <button class="btn" data-annuler>Annuler</button><button class="btn vert" data-ok>Enregistrer</button></div>`);
   const val = id => v.querySelector("#" + id).value.trim();
   v.querySelector("[data-annuler]").onclick = () => v.remove();
+  v.querySelector("[data-lire]").onclick = () => {
+    const lu = lirePageJustETF(v.querySelector("#mfColle").value);
+    if (lu.isin && lu.isin !== isin) return toast(`Cette page concerne ${lu.isin}, pas ${isin}.`, true);
+    const ecrire = (id, x) => { if (x != null && x !== "") v.querySelector("#" + id).value = x; };
+    ecrire("mfAu", lu.au || aujourdhui()); ecrire("mfEmetteur", lu.emetteur); ecrire("mfIndice", lu.indice);
+    ecrire("mfFrais", lu.frais); ecrire("mfEncours", lu.encours); ecrire("mfReplication", lu.replication);
+    ecrire("mfCreation", lu.creation); ecrire("mfDomicile", lu.domicile); ecrire("mfDividendes", lu.dividendes);
+    if (lu.pea != null) v.querySelector("#mfPea").value = lu.pea ? "1" : "0";
+    if (lu.top) ecrire("mfTop", versTexte(lu.top));
+    if (lu.pays) ecrire("mfPays", versTexte(lu.pays));
+    if (lu.secteurs) ecrire("mfSecteurs", versTexte(lu.secteurs));
+    if (lu.top || lu.pays || lu.secteurs) { ecrire("mfNote", lu.replication?.startsWith("Synth") ? "Composition de l'indice suivi (ETF synthétique), d'après justETF." : "D'après justETF."); }
+    ecrire("mfSource", `https://www.justetf.com/fr/etf-profile.html?isin=${isin}`);
+    const n = Object.keys(lu).filter(k => k !== "isin").length;
+    v.querySelector("#mfColleInfo").textContent = !n ? "Rien de reconnu : avez-vous copié toute la page ?"
+      : `${n} information(s) remplie(s)${lu.top || lu.pays ? "" : " · pas de composition sur cette page (justETF ne la publie pas pour ce fonds) : les listes actuelles sont gardées"}. Vérifiez puis « Enregistrer ».`;
+  };
   v.querySelector("[data-origine]")?.addEventListener("click", () => {
     delete DON.fiches[isin]; sauver(); v.remove(); tout(); toast("Fiche d'origine rétablie.");
   });
@@ -862,6 +850,17 @@ function allocationVue() {
   const total = lignes.reduce((t, l) => t + l.valeur, 0);
   $("aFrais").textContent = fr.taux == null ? "—" : nf(fr.taux, 2) + " %/an";
   $("aFraisS").textContent = fr.taux == null ? "fiches à compléter" : `soit ≈ ${eur(fr.coutAnnuel, 0)} par an${fr.couverture < total - 1 ? " (lignes renseignées)" : ""}`;
+  // volatilité : du portefeuille (indice hors versements) et de chaque ligne (à partir de ses cours)
+  const volPea = C.volatiliteAnnuelle(VUE.hist.map(p => [p.date, p.indice]));
+  const vols = lignes.map(l => ({ ...l, vol: C.statsCours(COURS.closes[l.isin])?.volatilite ?? null }));
+  const volMoy = vols.filter(l => l.vol != null).reduce((t, l) => t + l.vol * l.valeur, 0) / (vols.filter(l => l.vol != null).reduce((t, l) => t + l.valeur, 0) || 1);
+  $("aVol").textContent = volPea == null ? "—" : pct(volPea);
+  $("aVolS").textContent = volPea == null ? "pas encore 1 an d'historique" : `moyenne des lignes ${pct(volMoy)} : la diversification réduit le risque`;
+  barres($("aGVol"), C.TRANCHES_VOL.map(([min, max, nom]) => {
+    const dedans = vols.filter(l => l.vol != null && l.vol >= min && l.vol < max);
+    const part = dedans.reduce((t, l) => t + l.valeur, 0) / (total || 1);
+    return { nom, valeur: part, texte: pct(part), couleur: "var(--e1)", sous: dedans.map(l => `${l.court} ${nf(l.vol * 100, 0)} %`).join(" · ") };
+  }).filter(i => i.valeur > 0), { pastilles: false });
   const pays = C.allocation(lignes, fiches, "pays"), secteurs = C.allocation(lignes, fiches, "secteurs");
   const premier = l => l.find(([n]) => n !== C.AUTRES && n !== C.NON_RENSEIGNE);
   const [p1, s1] = [premier(pays), premier(secteurs)];

@@ -130,23 +130,10 @@
       <h2>Répartition dans le temps <span class="aide">poids sur les lignes à cible &gt; 0 % · pointillés = cibles actuelles</span></h2>
       <div id="gRepart"></div>
     </section>
-    <section class="carte">
-      <h2>Investi par mois <span class="aide" id="gMoisInfo"></span></h2>
-      <div id="gMois"></div>
-    </section>
-    <section class="carte">
-      <h2>Projection à 10 ans <span class="aide">simulation, pas une prévision · indépendante de la période</span></h2>
-      <div class="reglage">
-        <label class="en-ligne">Versement mensuel <input type="number" id="fProjMensuel" min="0" step="10" inputmode="decimal"> €</label>
-        <span id="gProjInfo"></span>
-      </div>
-      <div class="chiffres-proj" id="gProjChiffres"></div>
-      <div id="gProj"></div>
-      <div class="note-graphe">Rendements annuels hypothétiques de 5 %, 7 % et 9 %, appliqués chaque mois à la valeur actuelle du PEA et à chaque versement. Les marchés ne montent pas en ligne droite : il y aura des années négatives.</div>
-    </section>
     </div>
     <div id="vueAllocation" class="panneau" hidden>
-      <section class="kpis kpis-3">
+      <section class="kpis">
+        <div class="kpi"><div class="l">Volatilité (1 an)</div><div class="v" id="aVol">—</div><div class="s" id="aVolS">&nbsp;</div></div>
         <div class="kpi"><div class="l">Frais moyens</div><div class="v" id="aFrais">—</div><div class="s" id="aFraisS">&nbsp;</div></div>
         <div class="kpi"><div class="l">Premier pays</div><div class="v" id="aPays">—</div><div class="s" id="aPaysS">&nbsp;</div></div>
         <div class="kpi"><div class="l">Premier secteur</div><div class="v" id="aSecteur">—</div><div class="s" id="aSecteurS">&nbsp;</div></div>
@@ -155,6 +142,7 @@
         <section class="carte"><h2>Pays <span class="aide">exposition réelle, ETF pondérés par leur poids</span></h2><div id="aGPays"></div></section>
         <section class="carte"><h2>Secteurs</h2><div id="aGSecteurs"></div></section>
         <section class="carte"><h2>Principales positions <span class="aide">cumulées entre ETF, parmi les 10 premières de chacun</span></h2><div id="aGTop"></div></section>
+        <section class="carte"><h2>Volatilité <span class="aide">part du portefeuille par tranche de volatilité sur 1 an</span></h2><div id="aGVol"></div></section>
         <section class="carte"><h2>Émetteurs et réplication</h2><div id="aGEmetteurs"></div><div id="aGReplication"></div></section>
       </div>
       <div class="note-graphe" id="aNote"></div>
