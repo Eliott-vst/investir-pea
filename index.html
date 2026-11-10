@@ -49,10 +49,22 @@
         <div class="kpi-actions"><button class="btn petit" data-virement>+ Virement</button><button class="btn petit" data-corriger>Corriger</button></div></div>
     </section>
     <section class="carte">
-      <h2>Mes positions <span class="aide">touchez une ligne pour sa fiche · poids sur les lignes à cible &gt; 0 %</span></h2>
+      <div class="titre-carte">
+        <div><h2>Composition du portefeuille</h2>
+          <div class="texte">Vos lignes et leur performance sur la période choisie. Touchez une ligne pour sa fiche.</div></div>
+        <label class="choix-periode"><span class="visuellement-cache">Période de rendement</span>
+          <select id="fPeriodePos">
+            <option value="creation">Depuis sa création</option><option value="1j">1 jour</option><option value="1m">1 mois</option>
+            <option value="3m">3 mois</option><option value="6m">6 mois</option><option value="1a">1 an</option>
+            <option value="3a">3 ans</option><option value="ytd">Cumul annuel</option>
+          </select></label>
+      </div>
       <div class="table-defile">
         <table class="positions">
-          <thead><tr><th>ETF</th><th class="n">Parts</th><th class="n">Prix</th><th class="n">Valeur</th><th class="n">PRU</th><th class="n">Plus-value</th><th>Poids / cible</th></tr></thead>
+          <thead><tr>
+            <th data-tri="nom">Nom de l'ETF</th><th class="n" data-tri="part">Part</th><th class="n" data-tri="ter">TER</th>
+            <th class="n" data-tri="valeur">Valeur</th><th class="n" data-tri="variation">Variation du cours</th>
+            <th class="n" data-tri="dividendes">Dividendes</th><th class="n" data-tri="total">Rend. total</th></tr></thead>
           <tbody id="posCorps"></tbody>
           <tfoot id="posPied"></tfoot>
         </table>
@@ -111,8 +123,15 @@
       <button data-periode="365">1A</button><button data-periode="ytd">Cette année</button><button data-periode="max" class="actif">Max</button>
     </div>
     <section class="carte">
-      <h2>Plus-value en % du montant investi <span class="aide" id="gPvInfo"></span></h2>
+      <div class="titre-carte"><h2>Graphique de performance</h2><span class="aide" id="gPvInfo"></span></div>
+      <label class="choix-periode gauche"><span class="visuellement-cache">Mesure</span>
+        <select id="fMesurePerf">
+          <option value="relative">Variation relative (%)</option>
+          <option value="absolue">Performance absolue (€)</option>
+          <option value="investi">Plus-value / montant investi (%)</option>
+        </select></label>
       <div id="gPv"></div>
+      <div class="note-graphe" id="gPvNote"></div>
     </section>
     <section class="carte">
       <h2>Valeur du PEA vs total versé <span class="aide" id="gValInfo"></span></h2>

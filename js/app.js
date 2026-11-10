@@ -6,7 +6,7 @@ import { courbe, barres } from "./graphiques.js";
 import { lirePageJustETF } from "./justetf.js";
 import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.5.0";
+export const VERSION = "1.6.0";
 // palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
@@ -117,21 +117,7 @@ function accueil() {
   $("kLiq").innerHTML = `<span class="${r.liquidites < -0.005 ? "neg" : ""}">${eur(r.liquidites)}</span>`;
   $("liqAchats").innerHTML = `Liquidités disponibles : <b class="${r.liquidites < -0.005 ? "neg" : ""}">${eur(r.liquidites)}</b>`;
 
-  const echelle = Math.max(0.6, ...VUE.lignes.map(l => Math.max(l.poids || 0, l.cible)));
-  $("posCorps").innerHTML = VUE.lignes.map(l => {
-    const poids = l.cible > 0 ? l.poids : l.poidsPEA;
-    return `<tr data-isin="${esc(l.isin)}" tabindex="0" title="Voir la fiche">
-      <td class="etf-cell"><div class="etf"><span class="pastille" style="background:${couleur(l.isin)}"></span><div>${esc(l.court)}<small>${esc(l.ticker)} · ${esc(l.isin)}</small></div></div></td>
-      <td class="n" data-l="Parts">${nf(l.parts, 0)}</td>
-      <td class="n" data-l="Prix">${eur(l.prix)}</td>
-      <td class="n" data-l="Valeur">${eur(l.valeur, 0)}</td>
-      <td class="n" data-l="PRU">${l.pru == null ? "—" : nf(l.pru, 4) + " €"}</td>
-      <td class="n ${classeSigne(l.pv)}" data-l="Plus-value">${eurS(l.pv)}<small>${pct(l.pvPct, true)}</small></td>
-      <td class="poids"><div class="jauge"><i style="width:${Math.min(100, (poids || 0) / echelle * 100)}%;background:${couleur(l.isin)}"></i>${l.cible > 0 ? `<b style="left:${Math.min(100, l.cible / echelle * 100)}%"></b>` : ""}</div>
-        <small><span>${pct(poids)}${l.cible > 0 ? "" : " du PEA"}</span><span>${l.cible > 0 ? `cible ${pct(l.cible, false, 0)} (${l.ecart >= 0 ? "+" : "−"}${nf(Math.abs(l.ecart * 100), 1)} pt)` : "plus renforcé"}</span></small></td></tr>`;
-  }).join("") || `<tr><td colspan="7" class="vide">Aucune position.</td></tr>`;
-  $("posPied").innerHTML = `<tr><td class="etf-cell">Total titres</td><td></td><td></td><td class="n" data-l="Valeur">${eur(r.titres, 0)}</td>
-    <td class="n" data-l="Investi">${eur(r.investi, 0)}</td><td class="n ${classeSigne(r.pv)}" data-l="Plus-value">${eurS(r.pv)}<small>${pct(r.pvPct, true)}</small></td><td></td></tr>`;
+  compositionPortefeuille();
 
   const h = VUE.hist.slice(-91);
   $("miniInfo").textContent = h.length ? "3 derniers mois" : "";
@@ -140,6 +126,45 @@ function accueil() {
     format: v => eur(v, 0), formatAxe: v => nf(v / 1000, v % 1000 ? 1 : 0) + " k€",
     bulle: i => [["Valeur", eur(h[i].valeur, 0), "var(--e1)"], ["Plus-value", `${eurS(h[i].pv)} (${pct(h[i].pvPct, true)})`]] });
 }
+
+// ---------- composition du portefeuille (tableau de l'Accueil) ----------
+let PERIODE_POS = "creation", TRI_POS = { cle: "part", asc: false };
+const montantPct = (v, p) => v == null ? "—"
+  : `<span class="${classeSigne(v)}">${eurS(v, 2)}</span><br><span class="pastille-pct ${classeSigne(v)}">${pct(p, true, 2)}</span>`;
+function compositionPortefeuille() {
+  const r = VUE.resume, fiches = toutesFiches();
+  const total = r.titres + Math.max(0, r.liquidites);
+  const debut = C.debutPeriode(PERIODE_POS, VUE.hist);
+  const vp = C.variationsPeriode(DON, VUE.lignes, VUE.hist, debut);
+  const lignes = VUE.lignes.filter(l => l.parts > 0).map(l => ({ ...l, part: total ? (l.valeur || 0) / total : 0,
+    ter: fiches[l.isin]?.frais ?? null, ...vp.lignes[l.isin] }));
+  const cles = { nom: l => l.court.toLowerCase(), part: l => l.part, ter: l => l.ter ?? -1, valeur: l => l.valeur || 0,
+                 variation: l => l.pct ?? -Infinity, dividendes: l => l.dividendes, total: l => l.totalPct ?? -Infinity };
+  lignes.sort((a, b) => { const x = cles[TRI_POS.cle](a), y = cles[TRI_POS.cle](b); return (x < y ? -1 : x > y ? 1 : 0) * (TRI_POS.asc ? 1 : -1); });
+  document.querySelectorAll("table.positions th[data-tri]").forEach(th => {
+    th.classList.toggle("trie", th.dataset.tri === TRI_POS.cle); th.classList.toggle("asc", th.dataset.tri === TRI_POS.cle && TRI_POS.asc);
+  });
+  $("posCorps").innerHTML = lignes.map(l => `<tr data-isin="${esc(l.isin)}" tabindex="0" title="Voir la fiche">
+      <td><div class="etf"><span class="pastille" style="background:${couleur(l.isin)}"></span><span class="nom-etf"><span class="souligne">${esc(l.court)}</span><small>${esc(l.ticker || "")} · ${esc(l.type || "ETF")}</small></span></div></td>
+      <td class="n">${pct(l.part, false, 2)}</td>
+      <td class="n">${l.ter == null ? "—" : nf(l.ter, 2) + " %"}</td>
+      <td class="n">${eur(l.valeur)}<small>${nf(l.parts, 0)} × ${eur(l.prix, l.prix < 10 ? 4 : 2)}</small></td>
+      <td class="n">${montantPct(l.variation, l.pct)}</td>
+      <td class="n">${l.dividendes ? eur(l.dividendes) : "—"}</td>
+      <td class="n">${montantPct(l.total, l.totalPct)}</td></tr>`).join("")
+    + `<tr class="caisse"><td>Caisse <small class="info">(liquidités)</small></td><td class="n">${pct(total ? Math.max(0, r.liquidites) / total : 0, false, 2)}</td>
+      <td></td><td class="n">${eur(r.liquidites)}</td><td></td><td></td><td></td></tr>`;
+  const fr = C.fraisPonderes(VUE.lignes, fiches);
+  $("posPied").innerHTML = `<tr><td>Total pour le portefeuille</td><td class="n">${pct(1, false, 2)}</td>
+    <td class="n">${fr.taux == null ? "—" : nf(fr.taux, 2) + " %"}</td><td class="n">${eur(total)}</td>
+    <td class="n">${montantPct(vp.total.variation, vp.total.pct)}</td><td class="n">${vp.total.dividendes ? eur(vp.total.dividendes) : "—"}</td>
+    <td class="n">${montantPct(vp.total.total, vp.total.totalPct)}</td></tr>`;
+}
+$("fPeriodePos").onchange = () => { PERIODE_POS = $("fPeriodePos").value; compositionPortefeuille(); };
+document.querySelectorAll("table.positions th[data-tri]").forEach(th => th.onclick = () => {
+  TRI_POS = TRI_POS.cle === th.dataset.tri ? { cle: th.dataset.tri, asc: !TRI_POS.asc } : { cle: th.dataset.tri, asc: th.dataset.tri === "nom" };
+  compositionPortefeuille();
+});
 
 // ---------- saisie des achats ----------
 function prixDuJour(isin, date) {
@@ -441,7 +466,7 @@ function journal() {
     || `<tr><td colspan="7" class="vide">Aucun achat.</td></tr>`;
   const vs = [...DON.versements].reverse();
   $("vInfo").textContent = `${vs.length} mouvements · total versé ${eur(VUE.resume.verse)}`;
-  $("vCorps").innerHTML = vs.map(v => `<tr data-id="${esc(v.id)}"><td>${dFr(v.date)}</td><td class="info">${esc(v.note || "Versement")}${C.estAjustement(v) ? " (hors total versé)" : ""}</td>
+  $("vCorps").innerHTML = vs.map(v => `<tr data-id="${esc(v.id)}"><td>${dFr(v.date)}</td><td class="info">${esc(v.note || "Versement")}${C.horsVerse(v) ? " (hors total versé)" : ""}</td>
     <td class="n">${eur(v.montant)}</td><td><button class="suppr" data-suppr title="Supprimer ce versement" aria-label="Supprimer ce versement">×</button></td></tr>`).join("")
     || `<tr><td colspan="4" class="vide">Aucun versement.</td></tr>`;
 }
@@ -469,6 +494,7 @@ $("vCorps").addEventListener("click", async ev => {
 
 // ---------- graphiques ----------
 let VUE_GRAPH = "evolution";
+$("fMesurePerf").onchange = () => graphiques();
 document.querySelectorAll("[data-vue]").forEach(b => b.onclick = () => {
   VUE_GRAPH = b.dataset.vue;
   document.querySelectorAll("[data-vue]").forEach(x => x.classList.toggle("actif", x === b));
@@ -485,13 +511,26 @@ function graphiques() {
   const dates = h.map(p => p.date);
   const k = v => Math.abs(v) >= 10000 ? nf(v / 1000, 0) + " k€" : Math.abs(v) >= 1000 ? nf(v / 1000, 1) + " k€" : nf(v, 0) + " €";
 
-  // plus-value en % du montant investi : variation sur la période, comme Trade Republic
+  // graphique de performance : variation relative (hors versements), performance absolue (€) ou plus-value / investi
   const der = h[h.length - 1], prem = h[0];
-  $("gPvInfo").textContent = der ? `${pct(der.pvPct, true, 2)} · ${eurS(der.pv)}` : "";
-  courbe($("gPv"), { dates, titre: "Plus-value en % du montant investi", zero: true,
-    series: [{ nom: "Plus-value", couleur: "var(--e1)", valeurs: h.map(p => p.pvPct), aire: true }],
-    format: v => pct(v, true, 2), formatAxe: v => nf(Math.round(v * 100) || 0, 0) + " %",
-    bulle: i => [["Plus-value", pct(h[i].pvPct, true, 2), "var(--e1)"], ["en euros", eurS(h[i].pv)], ["Investi", eur(h[i].investi, 0)]] });
+  const mesure = $("fMesurePerf").value;
+  const axePct = v => nf(Math.round(v * 100) || 0, 0) + " %";
+  if (h.length) {
+    const serieP = mesure === "relative" ? h.map(p => p.indice / prem.indice - 1)
+      : mesure === "absolue" ? h.map(p => p.pv - (PERIODE === "max" ? 0 : prem.pv)) : h.map(p => p.pvPct);
+    const fmt = mesure === "absolue" ? v => eurS(v, 2) : v => pct(v, true, 2);
+    const fin = serieP[serieP.length - 1];
+    $("gPvInfo").innerHTML = `<span class="${classeSigne(fin)}">${fmt(fin)}</span>`;
+    $("gPvNote").textContent = {
+      relative: "Performance de vos placements, sans l'effet de vos versements (calcul « pondéré dans le temps », comme justETF).",
+      absolue: "Gain ou perte en euros : valeur des titres moins le montant investi" + (PERIODE === "max" ? "." : ", depuis le début de la période."),
+      investi: "Plus-value latente rapportée au montant investi à chaque date (comme sur l'Accueil).",
+    }[mesure];
+    courbe($("gPv"), { dates, titre: "Graphique de performance", zero: true,
+      series: [{ nom: "Performance", couleur: "var(--vert)", valeurs: serieP, signe: true }],
+      format: fmt, formatAxe: mesure === "absolue" ? k : axePct,
+      bulle: i => [["Performance", fmt(serieP[i]), serieP[i] >= 0 ? "var(--vert)" : "var(--rouge)"], ["Valeur du PEA", eur(h[i].valeur, 0)]] });
+  } else $("gPv").innerHTML = "";
 
   $("gValInfo").textContent = der && prem ? `${eur(der.valeur, 0)} · versé ${eur(der.verse, 0)}` : "";
   courbe($("gVal"), { dates, titre: "Valeur du PEA et total versé",
@@ -634,6 +673,7 @@ function dessinerFiche() {
   const f = ficheDe(e.isin) || {};
   const st = C.statsCours(COURS.closes[e.isin]);
   const achats = DON.achats.filter(a => a.isin === e.isin);
+  const divs = DON.versements.filter(v => C.estDividende(v) && v.isin === e.isin);
   const premier = achats[0]?.date;
   const varJour = st?.veille ? st.prix / st.veille - 1 : null;
   const perfAchat = premier && st ? (() => { const c = C.serie(COURS.closes[e.isin]).filter(([d]) => d <= premier).pop(); return c ? st.prix / c[1] - 1 : null; })() : null;
@@ -667,6 +707,8 @@ function dessinerFiche() {
           ${chiffre("Plus-value", `${eurS(l.pv)} (${pct(l.pvPct, true)})`, classeSigne(l.pv))}${chiffre("Investi", eur(l.cout, 0))}
           ${chiffre("Poids / cible", e.cible > 0 ? `${pct(l.poids)} / ${pct(e.cible, false, 0)}` : `${pct(l.poidsPEA)} du PEA`)}
         </div>
+        <div class="pied"><span class="note">${divs.length ? `${eur(divs.reduce((t, d) => t + d.montant, 0))} de dividendes reçus` : "Aucun dividende reçu"}</span>
+          <button class="btn petit" id="btnDividende">+ Dividende reçu</button></div>
         <details><summary>${achats.length} achat${achats.length > 1 ? "s" : ""}${premier ? ` depuis le ${dFr(premier)}` : ""}</summary>
           <table class="journal"><tbody>${[...achats].reverse().map(a => `<tr><td>${dFr(a.date)}</td><td class="n">${a.parts}</td><td class="n">${eur(a.prix, 4)}</td><td class="n">${eur(a.parts * a.prix)}</td></tr>`).join("")}</tbody></table>
         </details>
@@ -702,6 +744,27 @@ function dessinerFiche() {
                  ...(parDate[vue[i][0]] ? [["Mon achat", `${parDate[vue[i][0]]} part(s)`]] : [])] });
   document.querySelectorAll("[data-pfiche]").forEach(b => b.onclick = () => { PERIODE_FICHE = b.dataset.pfiche === "max" ? "max" : +b.dataset.pfiche; dessinerFiche(); });
   $("btnModifierFiche").onclick = () => modifierFiche(e.isin);
+  $("btnDividende").onclick = () => modaleDividende(e);
+}
+
+function modaleDividende(e) {
+  const v = modale(`<h3>Dividende reçu · ${esc(e.court)}</h3>
+    <div class="texte">Montant net crédité sur le PEA (visible dans vos transactions Trade Republic). Il s'ajoute à vos liquidités
+      et au rendement total, mais pas au total versé. Vos ETF actuels sont capitalisants : ils n'en versent pas.</div>
+    <div class="champs">
+      <label>Date <input type="date" id="mdDate" value="${aujourdhui()}" max="${aujourdhui()}"></label>
+      <label>Montant (€) <input type="number" id="mdMontant" min="0" step="0.01" inputmode="decimal"></label>
+    </div>
+    <div class="pied"><button class="btn" data-annuler>Annuler</button><button class="btn vert" data-ok>Enregistrer</button></div>`);
+  v.querySelector("[data-annuler]").onclick = () => v.remove();
+  v.querySelector("#mdMontant").focus();
+  v.querySelector("[data-ok]").onclick = () => {
+    const montant = parseFloat(v.querySelector("#mdMontant").value), date = v.querySelector("#mdDate").value;
+    if (!(montant > 0) || !date) return toast("Indiquez la date et un montant positif.", true);
+    v.remove();
+    ajouterMouvement({ date, montant: Math.round(montant * 100) / 100, type: "dividende", isin: e.isin, note: `Dividende ${e.court}` });
+    toast(`Dividende de ${eur(montant)} enregistré ✓`);
+  };
 }
 
 const versTexte = l => (l || []).map(([n, v]) => `${n} ; ${String(v).replace(".", ",")}`).join("\n");

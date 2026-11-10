@@ -80,6 +80,24 @@ export function courbe(conteneur, opts) {
       if (v == null || !isFinite(v)) { leve = true; return; }
       dpath += `${leve ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; leve = false;
     });
+    if (s.signe) {
+      // gain en vert au-dessus de zéro, perte en rouge en dessous, remplissage en dégradé vers la ligne zéro
+      const id = "g" + Math.random().toString(36).slice(2, 8), y0 = y(Math.min(Math.max(0, min), max));
+      const defs = el("defs");
+      defs.innerHTML = `<clipPath id="${id}h"><rect x="0" y="0" width="${L}" height="${y0}"/></clipPath>
+        <clipPath id="${id}b"><rect x="0" y="${y0}" width="${L}" height="${H}"/></clipPath>
+        <linearGradient id="${id}gh" x1="0" y1="${m.h}" x2="0" y2="${y0}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="var(--vert)" stop-opacity=".35"/><stop offset="1" stop-color="var(--vert)" stop-opacity="0"/></linearGradient>
+        <linearGradient id="${id}gb" x1="0" y1="${H - m.b}" x2="0" y2="${y0}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="var(--rouge)" stop-opacity=".35"/><stop offset="1" stop-color="var(--rouge)" stop-opacity="0"/></linearGradient>`;
+      svg.appendChild(defs);
+      const aire = `${dpath}L${x(dates.length - 1)},${y0}L${x(0)},${y0}Z`;
+      for (const [cote, coul] of [["h", "var(--vert)"], ["b", "var(--rouge)"]]) {
+        const g = el("g", { "clip-path": `url(#${id}${cote})` });
+        g.appendChild(el("path", { d: aire, fill: `url(#${id}g${cote})` }));
+        g.appendChild(el("path", { d: dpath, fill: "none", stroke: coul, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        svg.appendChild(g);
+      }
+      continue;
+    }
     if (s.aire) {
       const base = y(Math.max(min, 0));
       svg.appendChild(el("path", { d: `${dpath}L${x(dates.length - 1)},${base}L${x(0)},${base}Z`, fill: s.couleur, opacity: 0.1 }));

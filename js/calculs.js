@@ -87,7 +87,7 @@ export function resume(donnees, lignes) {
   const titres = lignes.reduce((s, l) => s + (l.valeur || 0), 0);
   const investi = lignes.reduce((s, l) => s + l.cout, 0);
   // « ajustement » = correction des liquidités (intérêts, écart constaté) : compte dans les liquidités, pas dans le total versé
-  const verse = donnees.versements.filter(v => !estAjustement(v)).reduce((s, v) => s + v.montant, 0);
+  const verse = donnees.versements.filter(v => !horsVerse(v)).reduce((s, v) => s + v.montant, 0);
   const liquidites = arrondi(donnees.versements.reduce((s, v) => s + v.montant, 0) - investi);
   const dates = donnees.achats.map(a => a.date).sort();
   return {
@@ -177,7 +177,10 @@ export function preremplirPlan(plan, closes, aujourdhui) {
   return { debut, executions, lignes };
 }
 
+// Mouvements de liquidités qui ne sont pas des versements : corrections et dividendes reçus.
 export const estAjustement = v => v.type === "ajustement";
+export const estDividende = v => v.type === "dividende";
+export const horsVerse = v => estAjustement(v) || estDividende(v);
 
 /** Versé prérempli : montants du plan (une fois par exécution et par ETF)
  *  + pour les achats ponctuels, le virement prévu par le « montant à investir » (budget au-delà des liquidités)
@@ -235,7 +238,7 @@ export function historique(donnees, closes) {
     }
     while (iv < versements.length && versements[iv].date <= d) {
       const v = versements[iv++];
-      if (estAjustement(v)) ajuste += v.montant; else verse += v.montant;
+      if (horsVerse(v)) ajuste += v.montant; else verse += v.montant;
     }
     let titres = 0;
     const parEtf = {};
@@ -367,4 +370,38 @@ export function fraisPonderes(lignes, fiches) {
     valeur += l.valeur; cout += l.valeur * f / 100;
   }
   return { taux: valeur ? cout / valeur * 100 : null, coutAnnuel: cout, couverture: valeur };
+}
+
+// ---------- composition du portefeuille sur une période (comme les comparateurs d'ETF) ----------
+
+/** Début d'une période de rendement : "creation", "1j", "1m", "3m", "6m", "1a", "3a", "ytd". null = depuis la création. */
+export function debutPeriode(code, hist) {
+  if (!hist.length || code === "creation") return null;
+  const fin = hist[hist.length - 1].date;
+  if (code === "1j") return hist.length > 1 ? hist[hist.length - 2].date : null;
+  if (code === "ytd") return `${+fin.slice(0, 4) - 1}-12-31`;
+  const jours = { "1m": 30, "3m": 91, "6m": 182, "1a": 365, "3a": 1095 }[code];
+  const d = ajouterJours(fin, -jours);
+  return d < hist[0].date ? null : d;
+}
+
+/** Variation de chaque ligne depuis `debut` (exclu) : valeur actuelle − valeur au début − achats de la période.
+ *  Le % rapporte ce gain à (valeur au début + achats de la période). Dividendes reçus sur la période à part.
+ *  → { lignes: {isin: {variation, pct, dividendes, total, totalPct}}, total: {...} } */
+export function variationsPeriode(donnees, lignes, hist, debut) {
+  const depart = debut ? [...hist].reverse().find(p => p.date <= debut) : null;
+  const out = {};
+  let tv = 0, tb = 0, td = 0;
+  for (const l of lignes) {
+    const achats = donnees.achats.filter(a => a.isin === l.isin && (!debut || a.date > debut));
+    const flux = achats.reduce((t, a) => t + a.parts * a.prix, 0);
+    const base = (depart?.parEtf[l.isin] || 0) + flux;
+    const variation = (l.valeur || 0) - (depart?.parEtf[l.isin] || 0) - flux;
+    const dividendes = donnees.versements.filter(v => estDividende(v) && v.isin === l.isin && (!debut || v.date > debut))
+      .reduce((t, v) => t + v.montant, 0);
+    out[l.isin] = { variation, pct: base ? variation / base : null, dividendes, total: variation + dividendes,
+                    totalPct: base ? (variation + dividendes) / base : null };
+    tv += variation; tb += base; td += dividendes;
+  }
+  return { lignes: out, total: { variation: tv, pct: tb ? tv / tb : null, dividendes: td, total: tv + td, totalPct: tb ? (tv + td) / tb : null } };
 }

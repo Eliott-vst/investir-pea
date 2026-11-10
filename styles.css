@@ -167,6 +167,28 @@ button.etiquette{cursor:pointer}
 .kpis-3{grid-template-columns:repeat(3,1fr)}
 .positions tbody tr{cursor:pointer}
 .positions tbody tr:hover td{background:var(--champ)}
+/* tableau des positions : première colonne figée, défilement horizontal */
+table.positions{min-width:720px}
+table.positions th:first-child,table.positions td:first-child{position:sticky;left:0;z-index:1;background:var(--carte);
+  box-shadow:inset -1px 0 0 var(--trait);min-width:170px;max-width:230px}
+table.positions tbody tr:hover td:first-child{background:var(--champ)}
+table.positions tr.caisse td{background:var(--vert-doux)}
+table.positions th[data-tri]{cursor:pointer;user-select:none}
+table.positions th[data-tri]::after{content:" ⇅";opacity:.35;font-size:10px}
+table.positions th.trie::after{content:" ↓";opacity:1;color:var(--ambre)}
+table.positions th.trie.asc::after{content:" ↑"}
+table.positions th{vertical-align:bottom;white-space:normal}
+.nom-etf{font-weight:600}
+.nom-etf .souligne{text-decoration:underline;text-underline-offset:2px}
+.nom-etf small{display:block;font-weight:400;text-decoration:none;color:var(--doux);font-size:11.5px}
+.pastille-pct{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:6px;font-size:11.5px;font-weight:600;border:1px solid}
+.pastille-pct.pos{background:var(--vert-doux);border-color:color-mix(in srgb,var(--vert) 40%,transparent)}
+.pastille-pct.neg{background:var(--rouge-doux);border-color:color-mix(in srgb,var(--rouge) 40%,transparent)}
+.titre-carte{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.titre-carte .texte{margin-top:4px}
+.choix-periode select{font-weight:600;min-height:36px;padding-right:28px}
+.choix-periode.gauche{align-self:flex-start}
+.visuellement-cache{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .fiche-tete{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
 .fiche-tete .pastille{width:14px;height:14px;margin-top:6px}
 .fiche-tete h2{font:600 20px/1.25 var(--titre);margin:0}
@@ -242,16 +264,7 @@ button.etiquette{cursor:pointer}
            padding:4px 2px calc(4px + env(safe-area-inset-bottom));justify-content:space-around;gap:0}
   .onglets button{flex-direction:column;gap:2px;font-size:10.5px;padding:6px 2px;border-bottom:none;margin:0;flex:1;min-width:0}
   .onglets svg{width:22px;height:22px}
-  /* positions en cartes */
-  table.positions thead{display:none}
-  table.positions,table.positions tbody,table.positions tr,table.positions td{display:block;width:100%}
-  table.positions tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--trait)}
-  table.positions tbody tr:last-child{border-bottom:none}
-  table.positions td{border:none;padding:0;text-align:left}
-  table.positions td.etf-cell{grid-column:1/-1}
-  table.positions td.poids{grid-column:1/-1}
-  table.positions td[data-l]::before{content:attr(data-l);display:block;font:600 10.5px var(--police);text-transform:uppercase;letter-spacing:.04em;color:var(--doux)}
-  table.positions tfoot tr{grid-template-columns:1fr 1fr 1fr}
+  table.positions th:first-child,table.positions td:first-child{min-width:132px;max-width:150px}
   /* saisie en cartes */
   .ops-tete{display:none}
   .op{grid-template-columns:1fr 1fr;gap:6px 10px;padding:12px 0;position:relative}

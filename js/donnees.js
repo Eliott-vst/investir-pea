@@ -117,7 +117,7 @@ export function exportCSV(d) {
   }
   lignes.push("", ["Versements", "", "", "", "", "Montant (€)", ""].join(";"));
   for (const v of [...d.versements].sort((x, y) => x.date.localeCompare(y.date))) {
-    lignes.push([v.date, "", "", "", "", num(v.montant.toFixed(2)), (v.note || "Versement") + (v.type === "ajustement" ? " (hors total versé)" : "")].join(";"));
+    lignes.push([v.date, "", "", "", "", num(v.montant.toFixed(2)), (v.note || "Versement") + (v.type === "ajustement" || v.type === "dividende" ? " (hors total versé)" : "")].join(";"));
   }
   return "﻿" + lignes.join("\r\n");
 }
