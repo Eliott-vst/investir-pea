@@ -1,6 +1,7 @@
 /* Investir PEA : reprise du visuel de l'ancienne interface, adapté au téléphone. */
 :root{
   color-scheme:light;
+  --e6:#e87ba4; --e7:#008300; --e8:#e34948;
   --fond:#f3f5f8; --carte:#ffffff; --encre:#16202c; --doux:#5d6b7c; --trait:#dde3ea; --champ:#f7f9fb;
   --marine:#164278; --marine-doux:#e6eef8; --vert:#1a8a50; --vert-doux:#e3f5ea; --rouge:#c23a3a; --rouge-doux:#fbe9e9;
   --ambre:#8f5600; --ambre-doux:#fdf2df;
@@ -16,13 +17,15 @@
     --fond:#0f141a; --carte:#171e27; --encre:#e5eaf0; --doux:#98a5b5; --trait:#2a3542; --champ:#1d2631;
     --marine:#8fb7ec; --marine-doux:#1c2b3d; --vert:#5fd394; --vert-doux:#173226; --rouge:#f08c8c; --rouge-doux:#3a1f22;
     --ambre:#f0b45a; --ambre-doux:#33281a;
-    --e1:#3987e5; --e2:#d95926; --e3:#199e70; --e4:#9085e9; --e5:#c98500; --verse:#8d99a8; }
+    --e1:#3987e5; --e2:#d95926; --e3:#199e70; --e4:#9085e9; --e5:#c98500; --verse:#8d99a8;
+    --e6:#d55181; --e7:#008300; --e8:#e66767; }
 }
 :root[data-theme="dark"]{ color-scheme:dark;
   --fond:#0f141a; --carte:#171e27; --encre:#e5eaf0; --doux:#98a5b5; --trait:#2a3542; --champ:#1d2631;
   --marine:#8fb7ec; --marine-doux:#1c2b3d; --vert:#5fd394; --vert-doux:#173226; --rouge:#f08c8c; --rouge-doux:#3a1f22;
   --ambre:#f0b45a; --ambre-doux:#33281a;
-  --e1:#3987e5; --e2:#d95926; --e3:#199e70; --e4:#9085e9; --e5:#c98500; --verse:#8d99a8; }
+  --e1:#3987e5; --e2:#d95926; --e3:#199e70; --e4:#9085e9; --e5:#c98500; --verse:#8d99a8;
+  --e6:#d55181; --e7:#008300; --e8:#e66767; }
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -158,6 +161,32 @@ button.etiquette{cursor:pointer}
 .chiffres-proj span{font-size:11.5px;color:var(--doux)}
 .chiffres-proj b{font:600 15px var(--chiffres);white-space:nowrap}
 .chiffres-proj small{font-size:11.5px;color:var(--doux)}
+.segments{display:inline-flex;background:var(--champ);border:1px solid var(--trait);border-radius:10px;padding:3px;gap:2px;align-self:flex-start}
+.segments button{border:none;background:none;padding:6px 14px;border-radius:7px;cursor:pointer;font-weight:600;color:var(--doux);min-height:32px}
+.segments button.actif{background:var(--carte);color:var(--marine);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.kpis-3{grid-template-columns:repeat(3,1fr)}
+.positions tbody tr{cursor:pointer}
+.positions tbody tr:hover td{background:var(--champ)}
+.fiche-tete{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.fiche-tete .pastille{width:14px;height:14px;margin-top:6px}
+.fiche-tete h2{font:600 20px/1.25 var(--titre);margin:0}
+.fiche-tete .sous{color:var(--doux);font-size:12.5px}
+.fiche-tete .prix{margin-left:auto;text-align:right}
+.fiche-tete .prix b{font:600 24px var(--titre);display:block;font-variant-numeric:tabular-nums}
+.fiche-tete .prix small{font-size:12.5px;color:var(--doux)}
+.grille-chiffres{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.grille-chiffres div{background:var(--champ);border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;min-width:0}
+.grille-chiffres span{font-size:11.5px;color:var(--doux)}
+.grille-chiffres b{font:600 15px var(--chiffres);overflow-wrap:anywhere}
+.identite{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:13.5px;margin:0}
+.identite dt{color:var(--doux)}
+.identite dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.resultats{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}
+.resultat{display:flex;gap:10px;align-items:center;text-align:left;border:1px solid var(--trait);background:var(--carte);border-radius:9px;padding:8px 10px;cursor:pointer}
+.resultat:hover{border-color:var(--marine)}
+.resultat small{display:block;color:var(--doux);font-size:12px}
+.champs textarea{background:var(--champ);border:1px solid var(--trait);border-radius:7px;padding:6px 9px;color:var(--encre);font:12.5px/1.4 var(--chiffres);min-height:110px;resize:vertical}
+.champs .deux{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .bulle{position:absolute;top:4px;pointer-events:none;background:var(--carte);border:1px solid var(--trait);border-radius:8px;padding:7px 10px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);min-width:170px;z-index:2}
 .bulle > b{display:block;margin-bottom:3px;font-weight:600}
 .bulle div{display:flex;align-items:center;gap:6px}
@@ -229,6 +258,10 @@ button.etiquette{cursor:pointer}
   .barre-nom{grid-column:1/-1}
   .barre-piste{grid-column:1}
   .journal td,.journal th{padding:6px 5px;font-size:13px}
+  .kpis-3{grid-template-columns:1fr 1fr}
+  .kpis-3 .kpi:first-child{grid-column:1/-1}
+  .fiche-tete .prix{margin-left:0;text-align:left;width:100%}
+  .champs .deux{grid-template-columns:1fr}
   .cibles td,.cibles th{padding:6px 4px;font-size:13px}
   .cibles th{white-space:normal}
   .cible-in input{width:62px}

@@ -5,10 +5,31 @@ import { ajouterJours, isoLocal, serie } from "./calculs.js";
 const BASE = "https://live.euronext.com/en/ajax/AwlHistoricalPrice/getFullDownloadAjax/";
 const DELAI = 20000;
 
-function url(isin, debut, fin) {
+// Places Euronext dont l'historique est téléchargeable (Paris par défaut).
+export const PLACES = { XPAR: "Paris", XAMS: "Amsterdam", XBRU: "Bruxelles", XLIS: "Lisbonne", XMSM: "Dublin", XOSL: "Oslo" };
+
+function url(isin, debut, fin, place = "XPAR") {
   const p = new URLSearchParams({ format: "csv", decimal_separator: ".", date_form: "d/m/Y", op: "",
                                   adjusted: "Y", base100: "", startdate: debut, enddate: fin });
-  return `${BASE}${isin}-XPAR?${p}`;
+  return `${BASE}${isin}-${place}?${p}`;
+}
+
+/** Recherche d'un titre sur Euronext (ISIN, nom ou mnémonique) → [{isin, nom, ticker, place, type}] */
+export async function rechercher(q) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), DELAI);
+  try {
+    const r = await fetch(`https://live.euronext.com/en/instrumentSearch/searchJSON?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+    if (!r.ok) throw new Error(`Euronext a répondu ${r.status}`);
+    const json = await r.json();
+    const lecteur = new DOMParser();
+    return (Array.isArray(json) ? json : []).filter(x => x.isin && PLACES[x.mic]).map(x => {
+      const doc = lecteur.parseFromString(String(x.label || ""), "text/html");   // libellé HTML lu sans être exécuté
+      return { isin: x.isin, place: x.mic, nom: doc.querySelector(".name")?.textContent.trim() || x.name || x.isin,
+               ticker: doc.querySelector(".symbol")?.textContent.trim() || "",
+               type: /\/etfs\//.test(x.link || "") ? "ETF" : /\/equities\//.test(x.link || "") ? "Action" : "Autre" };
+    });
+  } finally { clearTimeout(t); }
 }
 
 /** CSV Euronext → {date ISO: clôture} */
@@ -29,11 +50,11 @@ export function lireCSV(texte) {
   return out;
 }
 
-async function telecharger(isin, debut, fin) {
+export async function telecharger(isin, debut, fin, place = "XPAR") {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), DELAI);
   try {
-    const r = await fetch(url(isin, debut, fin), { signal: ctrl.signal, cache: "no-store" });
+    const r = await fetch(url(isin, debut, fin, place), { signal: ctrl.signal, cache: "no-store" });
     if (!r.ok) throw new Error(`Euronext a répondu ${r.status}`);
     return lireCSV(await r.text());
   } finally { clearTimeout(t); }
@@ -53,22 +74,23 @@ export const provisoire = date => date === jourParis() && heureParis() < "17:40"
 
 /** Met à jour le cache des clôtures. Télécharge depuis la dernière date connue (moins une marge),
  *  et tout l'historique si une division est apparue (cours anciens modifiés) ou si le cache est vide. */
-export async function actualiser(cache, isins, depuis) {
+export async function actualiser(cache, titres /* [isin] ou [{isin, place}] */, depuis) {
   const fin = isoLocal();
   const erreurs = [];
-  await Promise.all(isins.map(async isin => {
+  await Promise.all(titres.map(async titre => {
+    const { isin, place = "XPAR" } = typeof titre === "string" ? { isin: titre } : titre;
     const connus = cache.closes[isin] || {};
     const s = serie(connus);
     const debut = s.length && s[0][0] <= depuis ? ajouterJours(s[s.length - 1][0], -10) : depuis;
     try {
-      let neufs = await telecharger(isin, debut, fin);
+      let neufs = await telecharger(isin, debut, fin, place);
       const change = Object.entries(neufs).some(([d, v]) => connus[d] && Math.abs(v / connus[d] - 1) > 0.2);
-      if (change) neufs = await telecharger(isin, depuis, fin);
+      if (change) neufs = await telecharger(isin, depuis, fin, place);
       cache.closes[isin] = change ? neufs : { ...connus, ...neufs };
     } catch (e) {
       erreurs.push(`${isin} : ${e.name === "AbortError" ? "délai dépassé" : e.message}`);
     }
   }));
-  if (erreurs.length < isins.length) cache.maj = new Date().toISOString();
+  if (erreurs.length < titres.length) cache.maj = new Date().toISOString();
   return erreurs;
 }

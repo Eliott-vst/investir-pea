@@ -10,9 +10,10 @@ positions, achats et stratégie restent dans le stockage local de chaque apparei
 |---|---|
 | `index.html`, `styles.css` | interface (français, thème clair/sombre, mise en page téléphone) |
 | `js/calculs.js` | calculs : positions, PRU, rééquilibrage (2 ETF max), plan d'épargne, historique quotidien |
-| `js/cours.js` | clôtures Euronext Paris (EUR, ajustées des divisions) depuis `live.euronext.com` |
+| `js/cours.js` | clôtures Euronext (EUR, ajustées des divisions) et recherche de titres depuis `live.euronext.com` |
 | `js/donnees.js` | stockage local, export JSON/CSV, import avec fusion |
 | `js/graphiques.js` | graphiques SVG (aucune bibliothèque) |
+| `js/fiches.js` | fiches d'identité et composition des ETF (données statiques, à mettre à jour tous les 6 mois) |
 | `sw.js`, `manifest.webmanifest`, `icones/` | installation et fonctionnement hors ligne |
 | `tests/` (non publié) | tests locaux des calculs sur mes données réelles |
 

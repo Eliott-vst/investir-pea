@@ -129,7 +129,7 @@ export function barres(conteneur, items, opts = {}) {
     const w = Math.abs(i.valeur || 0) / maxAbs * echelle;
     const gauche = i.valeur < 0 ? zero - w : zero;
     return `<div class="barre-ligne" title="${i.nom} : ${i.texte}${i.detail ? " · " + i.detail : ""}">
-      <span class="barre-nom"><i class="pastille" style="background:${i.couleur}"></i>${i.nom}</span>
+      <span class="barre-nom">${opts.pastilles === false ? "" : `<i class="pastille" style="background:${i.couleur}"></i>`}${i.nom}</span>
       <span class="barre-piste">${aNeg && aPos ? `<b class="barre-zero" style="left:${zero}%"></b>` : ""}
         <i class="barre-val" style="left:${gauche}%;width:${Math.max(w, 0.5)}%;background:${i.couleur}"></i></span>
       <span class="barre-txt n">${i.texte}${i.detail ? `<small>${i.detail}</small>` : ""}</span></div>`;

@@ -1,11 +1,13 @@
 // Interface « Investir PEA » : état, rendu des écrans, actions.
 import * as C from "./calculs.js";
 import * as D from "./donnees.js";
-import { actualiser as actualiserCours, provisoire, jourParis } from "./cours.js";
-import { courbe, colonnes } from "./graphiques.js";
+import { actualiser as actualiserCours, provisoire, jourParis, rechercher, PLACES } from "./cours.js";
+import { courbe, colonnes, barres } from "./graphiques.js";
+import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.3.0";
-const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)"];
+export const VERSION = "1.4.0";
+// palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
+const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
 const CLE_EXPORT = "investir-pea:dernier-export";
 
@@ -58,6 +60,9 @@ let VUE = { lignes: [], resume: null, hist: [] };
 const etfs = () => DON.etf.liste;
 const couleur = isin => COULEURS[Math.max(0, etfs().findIndex(e => e.isin === isin)) % COULEURS.length];
 const nomEtf = isin => etfs().find(e => e.isin === isin)?.court || isin;
+const ficheDe = isin => DON.fiches?.[isin] || FICHES[isin] || null;
+const toutesFiches = () => Object.fromEntries(etfs().map(e => [e.isin, ficheDe(e.isin)]).filter(([, f]) => f));
+const titresCours = () => etfs().map(e => ({ isin: e.isin, place: e.place || "XPAR" }));
 const prixActuels = () => Object.fromEntries(etfs().map(e => [e.isin, C.dernierCours(COURS.closes[e.isin])?.prix ?? null]));
 
 function sauver() { DON.modifie = D.maintenant(); D.enregistrer(DON); }
@@ -83,6 +88,7 @@ function tout() {
   calculer();
   enTete(); accueil(); dessinerOps(); strategie(); journal(); sauvegarde();
   if (!panneau("graphiques").hidden) graphiques();
+  if (!panneau("fiche").hidden && FICHE_ISIN) dessinerFiche();
 }
 const panneau = nom => document.querySelector(`[data-panneau="${nom}"]`);
 
@@ -113,7 +119,7 @@ function accueil() {
   const echelle = Math.max(0.6, ...VUE.lignes.map(l => Math.max(l.poids || 0, l.cible)));
   $("posCorps").innerHTML = VUE.lignes.map(l => {
     const poids = l.cible > 0 ? l.poids : l.poidsPEA;
-    return `<tr>
+    return `<tr data-isin="${esc(l.isin)}" tabindex="0" title="Voir la fiche">
       <td class="etf-cell"><div class="etf"><span class="pastille" style="background:${couleur(l.isin)}"></span><div>${esc(l.court)}<small>${esc(l.ticker)} · ${esc(l.isin)}</small></div></div></td>
       <td class="n" data-l="Parts">${nf(l.parts, 0)}</td>
       <td class="n" data-l="Prix">${eur(l.prix)}</td>
@@ -162,12 +168,8 @@ function dessinerOps() {
       <div class="c-type"><span class="lbl">Type</span><button class="etiquette ${o.note === C.NOTE_PLAN ? "plan" : ""}" data-type title="Changer le type">${o.note === C.NOTE_PLAN ? "Plan" : "Ponctuel"}</button></div>
       <div class="c-sup"><button class="suppr" data-suppr title="Retirer cette ligne" aria-label="Retirer cette ligne">×</button></div>
     </div>`).join("")
-    : `<div class="vide">Préremplissez votre plan, demandez une proposition ou ajoutez un achat.</div>`;
+    : `<div class="vide">Ajoutez un achat (« + Ajouter un achat ») ou demandez une proposition.</div>`;
   majTotaux();
-  const pl = DON.plan, total = Object.values(pl.montants || {}).reduce((a, b) => a + b, 0);
-  const debut = C.debutPlan(pl);
-  $("infoPlan").textContent = total ? `${eur(total, 0)}/mois le ${pl.jour} · exécutions après le ${dFr(debut)}` : "aucun plan défini (onglet Stratégie)";
-  $("btnPlan").disabled = !total;
   infoMontant();
 }
 const liqDispo = () => Math.max(0, VUE.resume.liquidites);
@@ -186,7 +188,7 @@ function majTotaux() {
   const verse = VERSE_MANUEL ?? auto;
   if (document.activeElement !== $("fVerse")) $("fVerse").value = OPS.length || VERSE_MANUEL != null ? verse.toFixed(2) : "";
   $("infoVerse").textContent = VERSE_MANUEL != null ? `modifié à la main (calcul auto : ${eur(auto)})`
-    : "prérempli : montants du plan + virement nécessaire pour les achats ponctuels, après usage des liquidités";
+    : "calcul auto : montants du plan pour les lignes « Plan », virement nécessaire pour les achats ponctuels après usage des liquidités";
   $("btnVerseAuto").hidden = VERSE_MANUEL == null;
   const dispo = verse + liqDispo();
   const investi = OPS.reduce((s, o) => s + (o.parts || 0) * (o.prix || 0), 0);
@@ -233,21 +235,6 @@ $("btnVider").onclick = () => { OPS = []; VERSE_MANUEL = null; BUDGET = 0; $("fM
 $("fVerse").addEventListener("input", () => { VERSE_MANUEL = parseFloat($("fVerse").value) || 0; majTotaux(); });
 $("btnVerseAuto").onclick = () => { VERSE_MANUEL = null; majTotaux(); };
 
-$("btnPlan").onclick = () => {
-  const r = C.preremplirPlan(DON.plan, COURS.closes, aujourdhui());
-  if (!r.lignes.length) return toast(`Aucune exécution du plan depuis le ${dFr(r.debut)} (prochaine : le ${dFr(prochaineExecution())}).`);
-  OPS = OPS.filter(o => o.note !== C.NOTE_PLAN);
-  r.lignes.forEach(l => ajouterLigne({ ...l, libelle: l.coursDu ? `estim. clôt. ${dCourt(l.coursDu)}` : "cours introuvable" }));
-  OPS.sort((a, b) => a.date.localeCompare(b.date));
-  VERSE_MANUEL = null;
-  dessinerOps();
-  toast(`${r.executions.length} exécution(s) du plan ajoutée(s) : comparez avec Trade Republic et corrigez si besoin.`);
-};
-function prochaineExecution() {
-  const t = aujourdhui(); const [a, m] = t.split("-").map(Number);
-  const e = C.executionPlan(DON.plan.jour, a, m);
-  return e > t ? e : C.executionPlan(DON.plan.jour, m === 12 ? a + 1 : a, m === 12 ? 1 : m + 1);
-}
 
 // « Montant à investir » = budget total, liquidités comprises (vide = toutes les liquidités).
 // Une nouvelle proposition remplace la précédente ; les autres lignes saisies sont déduites du budget.
@@ -330,7 +317,8 @@ function dessinerCibles() {
   $("ciblesCorps").innerHTML = etfs().map(e => {
     const c = CIBLES[e.isin] || 0, poids = c > 0 && renf ? valeurs[e.isin] / renf : null;
     const ecart = poids == null ? null : poids - c / 100;
-    return `<tr><td><div class="etf"><span class="pastille" style="background:${couleur(e.isin)}"></span>${esc(e.court)}</div></td>
+    const retirable = !DON.achats.some(a => a.isin === e.isin);
+    return `<tr><td><div class="etf"><span class="pastille" style="background:${couleur(e.isin)}"></span><button class="btn lien" data-fiche="${esc(e.isin)}">${esc(e.court)}</button>${retirable ? `<button class="suppr" data-retirer="${esc(e.isin)}" title="Retirer cette ligne (aucun achat)" aria-label="Retirer ${esc(e.court)}">×</button>` : ""}</div></td>
       <td class="n">${poids == null ? `<span class="info">${pct(total ? valeurs[e.isin] / total : null)} du PEA</span>` : pct(poids)}</td>
       <td class="n"><div class="cible-in"><input type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${c}" data-cible="${e.isin}" aria-label="Cible ${esc(e.court)}"> %</div></td>
       <td class="n ${ecart == null ? "" : ecart < 0 ? "neg" : "pos"}">${ecart == null ? "—" : (ecart >= 0 ? "+" : "−") + nf(Math.abs(ecart * 100), 1) + " pt"}</td></tr>`;
@@ -479,7 +467,16 @@ $("vCorps").addEventListener("click", async ev => {
 });
 
 // ---------- graphiques ----------
+let VUE_GRAPH = "evolution";
+document.querySelectorAll("[data-vue]").forEach(b => b.onclick = () => {
+  VUE_GRAPH = b.dataset.vue;
+  document.querySelectorAll("[data-vue]").forEach(x => x.classList.toggle("actif", x === b));
+  graphiques();
+});
 function graphiques() {
+  $("vueEvolution").hidden = VUE_GRAPH !== "evolution";
+  $("vueAllocation").hidden = VUE_GRAPH !== "allocation";
+  if (VUE_GRAPH === "allocation") return allocationVue();
   let h = VUE.hist;
   const fin = h.length ? h[h.length - 1].date : aujourdhui();
   if (PERIODE === "ytd") h = h.filter(p => p.date >= fin.slice(0, 4) + "-01-01");
@@ -650,11 +647,244 @@ $("btnCoursManuel").onclick = () => {
   tout(); toast(`Cours enregistré : ${nomEtf(isin)} ${eur(prix, 4)} le ${dFr(date)}.`);
 };
 
+
+// ---------- fiche d'un titre ----------
+let FICHE_ISIN = null, PERIODE_FICHE = 365;
+function ouvrirFiche(isin) {
+  FICHE_ISIN = isin;
+  history.pushState({ fiche: isin }, "", "#fiche");
+  ouvrirOnglet("fiche");
+  dessinerFiche();
+}
+$("btnFicheRetour").onclick = () => (history.state?.fiche ? history.back() : ouvrirOnglet(ONGLET));
+$("posCorps").addEventListener("click", ev => { const tr = ev.target.closest("tr[data-isin]"); if (tr) ouvrirFiche(tr.dataset.isin); });
+$("posCorps").addEventListener("keydown", ev => { const tr = ev.target.closest("tr[data-isin]"); if (tr && ev.key === "Enter") ouvrirFiche(tr.dataset.isin); });
+
+const liste = (items, fmt = v => nf(v, 1) + " %") => barresHtml(items.map(([nom, v]) => ({ nom, valeur: v, texte: fmt(v) })));
+function barresHtml(items, couleurBarre = "var(--e1)") {
+  const div = document.createElement("div");
+  barres(div, items.map(i => ({ ...i, couleur: i.couleur || couleurBarre })), { pastilles: false });
+  return div.innerHTML;
+}
+
+function dessinerFiche() {
+  const e = etfs().find(x => x.isin === FICHE_ISIN);
+  if (!e) return ouvrirOnglet(ONGLET);
+  const l = VUE.lignes.find(x => x.isin === e.isin) || {};
+  const f = ficheDe(e.isin) || {};
+  const st = C.statsCours(COURS.closes[e.isin]);
+  const achats = DON.achats.filter(a => a.isin === e.isin);
+  const premier = achats[0]?.date;
+  const varJour = st?.veille ? st.prix / st.veille - 1 : null;
+  const perfAchat = premier && st ? (() => { const c = C.serie(COURS.closes[e.isin]).filter(([d]) => d <= premier).pop(); return c ? st.prix / c[1] - 1 : null; })() : null;
+  const chiffre = (lib, val, cls = "") => `<div><span>${lib}</span><b class="${cls}">${val}</b></div>`;
+  const perf = v => `<span class="${classeSigne(v)}">${pct(v, true)}</span>`;
+  const coutAnnuel = f.frais != null && l.valeur ? l.valeur * f.frais / 100 : null;
+  const dl = [["Type", e.type || "ETF"], ["Émetteur", f.emetteur], ["Indice suivi", f.indice], ["Frais annuels", f.frais != null ? `${nf(f.frais, 2)} %${coutAnnuel != null ? ` · ${eur(coutAnnuel, 0)}/an pour ma ligne` : ""}` : null],
+    ["Encours", f.encours], ["Réplication", f.replication], ["Création", f.creation ? dFr(f.creation) : null], ["Domicile", f.domicile],
+    ["Dividendes", f.dividendes], ["Éligible PEA", f.pea == null ? null : f.pea ? "Oui" : "Non"], ["Place de cotation", `Euronext ${PLACES[e.place || "XPAR"]}`]]
+    .filter(([, v]) => v != null && v !== "");
+  $("ficheContenu").innerHTML = `
+    <section class="carte">
+      <div class="fiche-tete"><span class="pastille" style="background:${couleur(e.isin)}"></span>
+        <div><h2>${esc(e.court)}</h2><div class="sous">${esc(e.nom || "")}<br>${esc(e.isin)} · ${esc(e.ticker || "")}</div></div>
+        <div class="prix"><b>${eur(st?.prix, st?.prix < 10 ? 4 : 2)}</b><small>${st ? `${perf(varJour)} · ${provisoire(st.date) ? "provisoire" : `clôture du ${dFr(st.date)}`}` : "aucun cours"}</small></div>
+      </div>
+      <div class="periodes" role="group" aria-label="Période du graphique">
+        ${[[30, "1M"], [182, "6M"], [365, "1A"], ["max", "Max"]].map(([v, t]) => `<button data-pfiche="${v}" class="${String(PERIODE_FICHE) === String(v) ? "actif" : ""}">${t}</button>`).join("")}
+      </div>
+      <div id="fGraphe"></div>
+      <div class="grille-chiffres">
+        ${chiffre("1 mois", perf(st?.perf.m1))}${chiffre("3 mois", perf(st?.perf.m3))}${chiffre("6 mois", perf(st?.perf.m6))}
+        ${chiffre("Depuis le 1er janv.", perf(st?.perf.ytd))}${chiffre("1 an", perf(st?.perf.a1))}${chiffre("Depuis mon 1er achat", perf(perfAchat))}
+      </div>
+    </section>
+    <div class="grille">
+      <section class="carte">
+        <h2>Ma ligne</h2>
+        <div class="grille-chiffres">
+          ${chiffre("Parts", nf(l.parts || 0, 0))}${chiffre("Valeur", eur(l.valeur, 0))}${chiffre("PRU", l.pru == null ? "—" : nf(l.pru, 4) + " €")}
+          ${chiffre("Plus-value", `${eurS(l.pv)} (${pct(l.pvPct, true)})`, classeSigne(l.pv))}${chiffre("Investi", eur(l.cout, 0))}
+          ${chiffre("Poids / cible", e.cible > 0 ? `${pct(l.poids)} / ${pct(e.cible, false, 0)}` : `${pct(l.poidsPEA)} du PEA`)}
+        </div>
+        <details><summary>${achats.length} achat${achats.length > 1 ? "s" : ""}${premier ? ` depuis le ${dFr(premier)}` : ""}</summary>
+          <table class="journal"><tbody>${[...achats].reverse().map(a => `<tr><td>${dFr(a.date)}</td><td class="n">${a.parts}</td><td class="n">${eur(a.prix, 4)}</td><td class="n">${eur(a.parts * a.prix)}</td></tr>`).join("")}</tbody></table>
+        </details>
+        <h3>Statistiques</h3>
+        <div class="grille-chiffres">
+          ${chiffre("Volatilité 1 an", st?.volatilite == null ? "—" : pct(st.volatilite))}${chiffre("Plus haut 52 sem.", eur(st?.haut52))}${chiffre("Plus bas 52 sem.", eur(st?.bas52))}
+          ${chiffre(`Pire baisse depuis ${st ? dCourt(st.debut) + "/" + st.debut.slice(2, 4) : "—"}`, st?.pireBaisse.date ? `${pct(st.pireBaisse.valeur)} (${dFr(st.pireBaisse.date)})` : "—")}
+        </div>
+      </section>
+      <section class="carte">
+        <h2>Identité <span class="aide">${f.au ? `données au ${dFr(f.au)}` : "fiche à compléter"}</span></h2>
+        <dl class="identite">${dl.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+        ${f.note ? `<div class="note-graphe">${esc(f.note)}</div>` : ""}
+        <div class="pied">${f.source ? `<a class="btn lien note" href="${esc(f.source)}" target="_blank" rel="noopener">Source</a>` : ""}<button class="btn" id="btnModifierFiche">Modifier la fiche</button></div>
+      </section>
+    </div>
+    ${f.top?.length || f.pays?.length || f.secteurs?.length ? `<div class="grille">
+      ${f.top?.length ? `<section class="carte"><h2>10 premières positions <span class="aide">${nf(f.top.reduce((t, x) => t + x[1], 0), 1)} % du fonds</span></h2>${liste(f.top)}</section>` : ""}
+      ${f.pays?.length ? `<section class="carte"><h2>Pays</h2>${liste(f.pays)}</section>` : ""}
+      ${f.secteurs?.length ? `<section class="carte"><h2>Secteurs</h2>${liste(f.secteurs)}</section>` : ""}
+    </div>` : ""}`;
+  // graphique du cours avec mon PRU
+  const s = C.serie(COURS.closes[e.isin]);
+  const fin = s.length ? s[s.length - 1][0] : aujourdhui();
+  const vue = PERIODE_FICHE === "max" ? s : s.filter(([d]) => d > C.ajouterJours(fin, -PERIODE_FICHE));
+  const parDate = {};
+  for (const a of achats) parDate[a.date] = (parDate[a.date] || 0) + a.parts;
+  courbe($("fGraphe"), { dates: vue.map(x => x[0]), titre: `Cours de ${e.court}`, hauteur: 220,
+    series: [{ nom: "Cours", couleur: couleur(e.isin), valeurs: vue.map(x => x[1]), aire: true },
+             ...(l.pru ? [{ nom: "Mon PRU", couleur: "var(--verse)", valeurs: vue.map(() => l.pru), pointille: true, epaisseur: 1.5 }] : [])],
+    format: v => eur(v, v < 10 ? 4 : 2), formatAxe: v => nf(v, v < 10 ? 2 : 0),
+    bulle: i => [["Cours", eur(vue[i][1], vue[i][1] < 10 ? 4 : 2), couleur(e.isin)], ...(l.pru ? [["Mon PRU", nf(l.pru, 4) + " €", "var(--verse)"]] : []),
+                 ...(parDate[vue[i][0]] ? [["Mon achat", `${parDate[vue[i][0]]} part(s)`]] : [])] });
+  document.querySelectorAll("[data-pfiche]").forEach(b => b.onclick = () => { PERIODE_FICHE = b.dataset.pfiche === "max" ? "max" : +b.dataset.pfiche; dessinerFiche(); });
+  $("btnModifierFiche").onclick = () => modifierFiche(e.isin);
+}
+
+const versTexte = l => (l || []).map(([n, v]) => `${n} ; ${String(v).replace(".", ",")}`).join("\n");
+function depuisTexte(t) {
+  const out = [];
+  for (const ligne of t.split(/\r?\n/)) {
+    const m = /^(.+?)[;\t]\s*(-?[\d\s]+(?:[.,]\d+)?)\s*%?\s*$/.exec(ligne.trim());
+    if (m) out.push([m[1].trim(), parseFloat(m[2].replace(/\s/g, "").replace(",", "."))]);
+    else if (ligne.trim()) throw new Error(`Ligne illisible : « ${ligne.trim()} » (format attendu : Nom ; 12,3)`);
+  }
+  return out;
+}
+function modifierFiche(isin) {
+  const e = etfs().find(x => x.isin === isin), f = ficheDe(isin) || {};
+  const champ = (id, lib, val, type = "text") => `<label>${lib}<input id="${id}" type="${type}" value="${esc(val ?? "")}"${type === "number" ? ' step="0.01" inputmode="decimal"' : ""}></label>`;
+  const v = modale(`<h3>Fiche ${esc(e.court)}</h3>
+    <div class="texte">Recopiez la fiche mensuelle de l'émetteur (tous les 6 mois environ). Pour les listes : une ligne par élément, « Nom ; pourcentage ».</div>
+    <div class="champs">
+      <div class="deux">${champ("mfCourt", "Nom court", e.court)}${champ("mfAu", "Données au", f.au, "date")}</div>
+      ${champ("mfNom", "Nom complet", e.nom)}
+      <div class="deux">${champ("mfEmetteur", "Émetteur", f.emetteur)}${champ("mfIndice", "Indice suivi", f.indice)}</div>
+      <div class="deux">${champ("mfFrais", "Frais annuels (%)", f.frais, "number")}${champ("mfEncours", "Encours", f.encours)}</div>
+      <div class="deux">${champ("mfReplication", "Réplication", f.replication)}${champ("mfCreation", "Création", f.creation, "date")}</div>
+      <div class="deux">${champ("mfDomicile", "Domicile", f.domicile)}${champ("mfDividendes", "Dividendes", f.dividendes)}</div>
+      <label>Éligible PEA <select id="mfPea"><option value="">?</option><option value="1" ${f.pea === true ? "selected" : ""}>Oui</option><option value="0" ${f.pea === false ? "selected" : ""}>Non</option></select></label>
+      <label>10 premières positions<textarea id="mfTop">${esc(versTexte(f.top))}</textarea></label>
+      <div class="deux"><label>Pays<textarea id="mfPays">${esc(versTexte(f.pays))}</textarea></label>
+        <label>Secteurs<textarea id="mfSecteurs">${esc(versTexte(f.secteurs))}</textarea></label></div>
+      <label>Note<input id="mfNote" value="${esc(f.note || "")}"></label>
+      <label>Lien source<input id="mfSource" type="url" value="${esc(f.source || "")}"></label>
+    </div>
+    <div class="pied">${DON.fiches?.[isin] && FICHES[isin] ? `<button class="btn danger" data-origine>Fiche d'origine</button>` : ""}
+      <button class="btn" data-annuler>Annuler</button><button class="btn vert" data-ok>Enregistrer</button></div>`);
+  const val = id => v.querySelector("#" + id).value.trim();
+  v.querySelector("[data-annuler]").onclick = () => v.remove();
+  v.querySelector("[data-origine]")?.addEventListener("click", () => {
+    delete DON.fiches[isin]; sauver(); v.remove(); tout(); toast("Fiche d'origine rétablie.");
+  });
+  v.querySelector("[data-ok]").onclick = () => {
+    try {
+      const frais = val("mfFrais") === "" ? null : parseFloat(val("mfFrais").replace(",", "."));
+      const nouvelle = { maj: D.maintenant(), au: val("mfAu") || null, emetteur: val("mfEmetteur"), indice: val("mfIndice"), frais,
+        encours: val("mfEncours"), replication: val("mfReplication"), creation: val("mfCreation") || null, domicile: val("mfDomicile"),
+        dividendes: val("mfDividendes"), pea: val("mfPea") === "" ? null : val("mfPea") === "1",
+        top: depuisTexte(val("mfTop")), pays: depuisTexte(val("mfPays")), secteurs: depuisTexte(val("mfSecteurs")),
+        note: val("mfNote"), source: val("mfSource") };
+      DON.fiches = { ...(DON.fiches || {}), [isin]: nouvelle };
+      if (val("mfCourt") && (val("mfCourt") !== e.court || val("mfNom") !== (e.nom || ""))) {
+        DON.etf = { maj: D.maintenant(), liste: etfs().map(x => x.isin === isin ? { ...x, court: val("mfCourt"), nom: val("mfNom") } : x) };
+      }
+      sauver(); v.remove(); tout(); toast("Fiche enregistrée ✓");
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+// ---------- ajouter / retirer une ligne ----------
+$("btnAjouterLigne").onclick = () => {
+  const v = modale(`<h3>Ajouter un ETF ou une action</h3>
+    <div class="texte">Recherche sur Euronext par ISIN, nom ou mnémonique. La ligne est ajoutée avec une cible à 0 % : réglez-la ensuite.
+      <b>Vérifiez vous-même l'éligibilité au PEA</b> (l'application ne peut pas la contrôler).</div>
+    <div class="outils"><input id="mlRecherche" placeholder="ex. FR0011869353 ou Amundi MSCI World" style="flex:1;min-width:0">
+      <button class="btn primaire" data-chercher>Rechercher</button></div>
+    <div class="resultats" id="mlResultats"></div>
+    <div class="pied"><button class="btn" data-annuler>Fermer</button></div>`);
+  const champ = v.querySelector("#mlRecherche"), zone = v.querySelector("#mlResultats");
+  let resultats = [];
+  v.querySelector("[data-annuler]").onclick = () => v.remove();
+  const chercher = async () => {
+    const q = champ.value.trim();
+    if (q.length < 2) return;
+    zone.innerHTML = `<div class="info">Recherche…</div>`;
+    try {
+      resultats = await rechercher(q);
+      zone.innerHTML = resultats.length ? resultats.map((r, i) => `<button class="resultat" data-i="${i}">
+          <div><b>${esc(r.nom)}</b><small>${esc(r.type)} · ${esc(r.isin)} · ${esc(r.ticker)} · Euronext ${esc(PLACES[r.place])}</small></div></button>`).join("")
+        : `<div class="info">Aucun titre trouvé sur les places Euronext prises en charge.</div>`;
+    } catch (e) { zone.innerHTML = `<div class="info neg">Recherche impossible : ${esc(e.message)}</div>`; }
+  };
+  v.querySelector("[data-chercher]").onclick = chercher;
+  champ.addEventListener("keydown", ev => { if (ev.key === "Enter") chercher(); });
+  champ.focus();
+  zone.addEventListener("click", async ev => {
+    const b = ev.target.closest(".resultat"); if (!b) return;
+    const r = resultats[+b.dataset.i];
+    if (etfs().some(x => x.isin === r.isin)) return toast(`${r.nom} est déjà dans vos lignes.`, true);
+    const court = prompt("Nom court affiché dans l'application :", r.nom.length > 24 ? r.nom.slice(0, 24) : r.nom);
+    if (court === null) return;
+    zone.innerHTML = `<div class="info">Vérification des cours…</div>`;
+    const depuis = C.ajouterJours([DON.reglages.ouverture, DON.achats[0]?.date].filter(Boolean).sort()[0] || C.ajouterJours(aujourdhui(), -400), -7);
+    const erreurs = await actualiserCours(COURS, [{ isin: r.isin, place: r.place }], depuis);
+    if (erreurs.length || !Object.keys(COURS.closes[r.isin] || {}).length) {
+      zone.innerHTML = `<div class="info neg">Impossible de récupérer les cours de ce titre sur Euronext ${esc(PLACES[r.place])}. Ligne non ajoutée.</div>`;
+      return;
+    }
+    D.enregistrerCours(COURS);
+    DON.etf = { maj: D.maintenant(), liste: [...etfs(), { isin: r.isin, court: court.trim() || r.nom, nom: r.nom, ticker: r.ticker, place: r.place, type: r.type, cible: 0 }] };
+    sauver(); v.remove(); tout();
+    toast(`${court.trim() || r.nom} ajouté (cible 0 %). Complétez sa fiche depuis l'Accueil si besoin.`);
+  });
+};
+$("ciblesCorps").addEventListener("click", async ev => {
+  const fiche = ev.target.closest("[data-fiche]");
+  if (fiche) return ouvrirFiche(fiche.dataset.fiche);
+  const b = ev.target.closest("[data-retirer]"); if (!b) return;
+  const isin = b.dataset.retirer, e = etfs().find(x => x.isin === isin);
+  if (DON.achats.some(a => a.isin === isin)) return toast("Impossible : cette ligne a des achats.", true);
+  if (!await confirmer(`Retirer ${esc(e.court)} ?`, "La ligne n'a aucun achat. Elle disparaît des cibles, des achats et des graphiques.", "Retirer", true)) return;
+  DON.etf = { maj: D.maintenant(), liste: etfs().filter(x => x.isin !== isin) };
+  if (DON.plan.montants?.[isin]) { const m = { ...DON.plan.montants }; delete m[isin]; DON.plan = { ...DON.plan, montants: m, maj: D.maintenant() }; }
+  sauver(); tout(); toast(`${e.court} retiré.`);
+});
+
+// ---------- mon allocation ----------
+function allocationVue() {
+  const lignes = VUE.lignes.filter(l => l.valeur > 0);
+  const fiches = toutesFiches();
+  const fr = C.fraisPonderes(lignes, fiches);
+  const total = lignes.reduce((t, l) => t + l.valeur, 0);
+  $("aFrais").textContent = fr.taux == null ? "—" : nf(fr.taux, 2) + " %/an";
+  $("aFraisS").textContent = fr.taux == null ? "fiches à compléter" : `soit ≈ ${eur(fr.coutAnnuel, 0)} par an${fr.couverture < total - 1 ? " (lignes renseignées)" : ""}`;
+  const pays = C.allocation(lignes, fiches, "pays"), secteurs = C.allocation(lignes, fiches, "secteurs");
+  const premier = l => l.find(([n]) => n !== C.AUTRES && n !== C.NON_RENSEIGNE);
+  const [p1, s1] = [premier(pays), premier(secteurs)];
+  $("aPays").textContent = p1 ? p1[0] : "—"; $("aPaysS").textContent = p1 ? `${pct(p1[1])} du portefeuille` : "";
+  $("aSecteur").textContent = s1 ? s1[0] : "—"; $("aSecteurS").textContent = s1 ? `${pct(s1[1])} du portefeuille` : "";
+  const items = l => l.map(([nom, v]) => ({ nom, valeur: v, texte: pct(v), couleur: nom === C.AUTRES || nom === C.NON_RENSEIGNE ? "var(--verse)" : "var(--e1)" }));
+  const sp = { pastilles: false };
+  barres($("aGPays"), items(pays), sp);
+  barres($("aGSecteurs"), items(secteurs), sp);
+  barres($("aGTop"), items(C.positionsCumulees(lignes, fiches)), sp);
+  $("aGEmetteurs").innerHTML = "<h3>Émetteurs</h3>"; const d1 = document.createElement("div"); barres(d1, items(C.repartitionPar(lignes, fiches, "emetteur")), sp); $("aGEmetteurs").appendChild(d1);
+  $("aGReplication").innerHTML = "<h3>Réplication</h3>"; const d2 = document.createElement("div"); barres(d2, items(C.repartitionPar(lignes, fiches, "replication")), sp); $("aGReplication").appendChild(d2);
+  const dates = Object.values(fiches).map(f => f.au).filter(Boolean).sort();
+  const approx = etfs().filter(e => /approximation/i.test(fiches[e.isin]?.note || "")).map(e => e.court);
+  $("aNote").textContent = `Calculé à partir des fiches des ETF${dates.length ? ` (données du ${dFr(dates[0])} au ${dFr(dates[dates.length - 1])})` : ""}, pondérées par la valeur actuelle de chaque ligne. « Autres » = pays ou secteurs non détaillés dans les fiches.`
+    + (approx.length ? ` ${approx.join(", ")} : composition approchée (voir sa fiche).` : "");
+}
+
 // ---------- cours ----------
 async function chargerCours(manuel = false) {
   if (!navigator.onLine) { if (manuel) toast("Pas de connexion : cours en mémoire utilisés.", true); return; }
   const depuis = [DON.reglages.ouverture, DON.achats[0]?.date].filter(Boolean).sort()[0] || C.ajouterJours(aujourdhui(), -400);
-  const erreurs = await actualiserCours(COURS, etfs().map(e => e.isin), C.ajouterJours(depuis, -7));
+  const erreurs = await actualiserCours(COURS, titresCours(), C.ajouterJours(depuis, -7));
   D.enregistrerCours(COURS);
   tout();
   if (erreurs.length) toast(`Cours non mis à jour pour ${erreurs.length} ETF (Euronext injoignable) : derniers cours connus utilisés.`, true);
@@ -687,20 +917,33 @@ $("btnTheme").onclick = () => {
 };
 
 // ---------- onglets ----------
+let ONGLET = "accueil";
 function ouvrirOnglet(nom) {
-  document.querySelectorAll(".onglets button").forEach(x => x.classList.toggle("actif", x.dataset.onglet === nom));
+  if (nom !== "fiche") { ONGLET = nom; FICHE_ISIN = null; }
+  document.querySelectorAll(".onglets button").forEach(x => x.classList.toggle("actif", x.dataset.onglet === (nom === "fiche" ? ONGLET : nom)));
   document.querySelectorAll("[data-panneau]").forEach(p => { p.hidden = p.dataset.panneau !== nom; });
-  try { sessionStorage.setItem("onglet", nom); } catch { /* */ }
+  if (nom !== "fiche") try { sessionStorage.setItem("onglet", nom); } catch { /* */ }
   if (nom === "graphiques") graphiques();
   if (nom === "accueil") accueil();
   window.scrollTo({ top: 0 });
 }
-document.querySelectorAll(".onglets button").forEach(b => b.onclick = () => ouvrirOnglet(b.dataset.onglet));
+document.querySelectorAll(".onglets button").forEach(b => b.onclick = () => {
+  if (history.state?.fiche) history.back();     // ferme la fiche sans laisser d'entrée dans l'historique
+  ouvrirOnglet(b.dataset.onglet);
+});
+window.addEventListener("popstate", ev => {
+  if (ev.state?.fiche) { FICHE_ISIN = ev.state.fiche; ouvrirOnglet("fiche"); dessinerFiche(); }
+  else if (!panneau("fiche").hidden) ouvrirOnglet(ONGLET);
+});
 let attente;
 window.addEventListener("resize", () => {
   if (!VUE.resume) return;
   clearTimeout(attente);
-  attente = setTimeout(() => { if (!panneau("graphiques").hidden) graphiques(); if (!panneau("accueil").hidden) accueil(); }, 150);
+  attente = setTimeout(() => {
+    if (!panneau("graphiques").hidden) graphiques();
+    if (!panneau("accueil").hidden) accueil();
+    if (!panneau("fiche").hidden && FICHE_ISIN) dessinerFiche();
+  }, 150);
 });
 
 // ---------- démarrage ----------

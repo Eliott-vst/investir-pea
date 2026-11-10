@@ -293,3 +293,88 @@ export function investiParMois(achats) {
   }
   return out;
 }
+
+// ---------- statistiques d'un titre (à partir des clôtures) ----------
+
+/** → {date, prix, veille, perf: {m1, m3, m6, ytd, a1}, haut52, bas52, volatilite, pireBaisse: {valeur, date}, debut} */
+export function statsCours(closes) {
+  const s = serie(closes);
+  if (!s.length) return null;
+  const [dFin, pFin] = s[s.length - 1];
+  const avant = iso => { let r = null; for (const x of s) { if (x[0] <= iso) r = x; else break; } return r; };
+  const perfDepuis = iso => { const r = avant(iso); return r && r[0] < dFin ? pFin / r[1] - 1 : null; };
+  const an = s.filter(([d]) => d > ajouterJours(dFin, -365));
+  const rend = [];
+  for (let i = 1; i < an.length; i++) rend.push(Math.log(an[i][1] / an[i - 1][1]));
+  const moy = rend.reduce((a, b) => a + b, 0) / (rend.length || 1);
+  const vol = rend.length > 20 ? Math.sqrt(rend.reduce((a, r) => a + (r - moy) ** 2, 0) / (rend.length - 1) * 252) : null;
+  let haut = -Infinity, pire = { valeur: 0, date: null };
+  for (const [d, v] of s) { haut = Math.max(haut, v); const dd = v / haut - 1; if (dd < pire.valeur) pire = { valeur: dd, date: d }; }
+  return {
+    date: dFin, prix: pFin, veille: s.length > 1 ? s[s.length - 2][1] : null,
+    perf: { m1: perfDepuis(ajouterJours(dFin, -30)), m3: perfDepuis(ajouterJours(dFin, -91)), m6: perfDepuis(ajouterJours(dFin, -182)),
+            ytd: perfDepuis(`${+dFin.slice(0, 4) - 1}-12-31`), a1: perfDepuis(ajouterJours(dFin, -365)) },
+    haut52: Math.max(...an.map(x => x[1])), bas52: Math.min(...an.map(x => x[1])),
+    volatilite: vol, pireBaisse: pire, debut: s[0][0],
+  };
+}
+
+// ---------- allocation du portefeuille (à partir des fiches) ----------
+
+export const AUTRES = "Autres", NON_RENSEIGNE = "Non renseigné";
+
+/** Exposition du portefeuille par pays / secteur : composition de chaque ligne pondérée par sa valeur.
+ *  lignes : [{isin, valeur}] ; fiches : isin → {pays: [[nom, %]], secteurs: [[nom, %]]}
+ *  → [[nom, part (0-1)]] trié, « Autres » puis « Non renseigné » en dernier. */
+export function allocation(lignes, fiches, cle) {
+  const total = lignes.reduce((t, l) => t + Math.max(0, l.valeur || 0), 0);
+  if (!total) return [];
+  const m = {};
+  const ajoute = (nom, v) => { m[nom] = (m[nom] || 0) + v; };
+  for (const l of lignes) {
+    const w = Math.max(0, l.valeur || 0) / total;
+    if (!w) continue;
+    const liste = fiches[l.isin]?.[cle];
+    if (!liste?.length) { ajoute(NON_RENSEIGNE, w); continue; }
+    let somme = 0;
+    for (const [nom, p] of liste) { ajoute(/^autres?$/i.test(nom) ? AUTRES : nom, w * p / 100); somme += p; }
+    if (somme < 99.5) ajoute(AUTRES, w * (100 - somme) / 100);
+  }
+  const fin = n => (n === NON_RENSEIGNE ? 2 : n === AUTRES ? 1 : 0);
+  return Object.entries(m).filter(([, v]) => v > 0.00005).sort((a, b) => fin(a[0]) - fin(b[0]) || b[1] - a[1]);
+}
+
+/** Principales positions sous-jacentes, cumulées entre ETF (parmi les 10 premières de chaque fiche). */
+export function positionsCumulees(lignes, fiches, n = 10) {
+  const total = lignes.reduce((t, l) => t + Math.max(0, l.valeur || 0), 0);
+  if (!total) return [];
+  const m = {};
+  for (const l of lignes) {
+    const w = Math.max(0, l.valeur || 0) / total;
+    for (const [nom, p] of fiches[l.isin]?.top || []) m[nom] = (m[nom] || 0) + w * p / 100;
+  }
+  return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+/** Regroupe la valeur des lignes selon un champ de la fiche (émetteur, réplication…). */
+export function repartitionPar(lignes, fiches, champ) {
+  const total = lignes.reduce((t, l) => t + Math.max(0, l.valeur || 0), 0);
+  if (!total) return [];
+  const m = {};
+  for (const l of lignes) {
+    const nom = fiches[l.isin]?.[champ] || NON_RENSEIGNE;
+    m[nom] = (m[nom] || 0) + Math.max(0, l.valeur || 0) / total;
+  }
+  return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => (a[0] === NON_RENSEIGNE) - (b[0] === NON_RENSEIGNE) || b[1] - a[1]);
+}
+
+/** Frais annuels moyens pondérés (en %) et coût annuel en euros, sur les lignes dont les frais sont connus. */
+export function fraisPonderes(lignes, fiches) {
+  let valeur = 0, cout = 0;
+  for (const l of lignes) {
+    const f = fiches[l.isin]?.frais;
+    if (f == null || !(l.valeur > 0)) continue;
+    valeur += l.valeur; cout += l.valeur * f / 100;
+  }
+  return { taux: valeur ? cout / valeur * 100 : null, coutAnnuel: cout, couverture: valeur };
+}

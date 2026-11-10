@@ -27,6 +27,7 @@ export function vide() {
     ] },
     plan: { maj: t, montants: {}, jour: 2, regle: null, dernier: null },
     divisions: [{ isin: "LU1829219390", date: "2026-10-26", ratio: 80 }],
+    fiches: {},
     achats: [], versements: [], supprimes: [],
   };
 }
@@ -76,6 +77,7 @@ export function fusionner(local, autre) {
     etf: recent(local.etf, autre.etf),
     plan: recent(local.plan, autre.plan),
     divisions: [...divisions.values()],
+    fiches: fusionFiches(local.fiches, autre.fiches),
     achats: union(local.achats, autre.achats),
     versements: union(local.versements, autre.versements),
     supprimes,
@@ -84,6 +86,13 @@ export function fusionner(local, autre) {
   const derniers = [local.plan?.dernier, autre.plan?.dernier].filter(Boolean).sort();
   if (derniers.length) fusion.plan = { ...fusion.plan, dernier: derniers.pop() };
   return { donnees: fusion, ajouts: { achats: fusion.achats.length - avant.achats, versements: fusion.versements.length - avant.versements } };
+}
+
+/** Fiches modifiées à la main : pour chaque titre, la plus récente l'emporte. */
+function fusionFiches(a = {}, b = {}) {
+  const out = { ...a };
+  for (const [isin, f] of Object.entries(b || {})) if (!out[isin] || (f.maj || "") > (out[isin].maj || "")) out[isin] = f;
+  return out;
 }
 
 export function telecharger(nom, contenu, type) {
