@@ -437,3 +437,11 @@ export function projection({ depart, verse, mensuel, taux, mois, plafond = 15000
   }
   return { valeur, verse: total, moisPlafond };
 }
+
+/** Versement mensuel moyen sur les `mois` derniers mois jusqu'à `fin` (inclus) : virements comptés dans le total
+ *  versé (corrections et dividendes exclus), divisés par le nombre de mois. */
+export function versementMensuelMoyen(donnees, fin, mois = 12) {
+  const debut = ajouterJours(fin, -Math.round(mois * 365 / 12));
+  const total = donnees.versements.filter(v => !horsVerse(v) && v.date > debut && v.date <= fin).reduce((s, v) => s + v.montant, 0);
+  return total / mois;
+}

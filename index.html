@@ -214,8 +214,10 @@
     </section>
 
     <section class="carte">
-      <div class="titre-carte"><h2>Projection</h2>
-        <label class="champ-taux">Rendement / an<span class="champ-euro"><input type="number" id="fTaux" min="0" max="20" step="0.5" inputmode="decimal" aria-label="Rendement annuel supposé"><span>%</span></span></label>
+      <h2>Projection</h2>
+      <div class="deux-champs">
+        <label class="champ-mini">Versé par mois<span class="champ-euro"><input type="number" id="fVerseProj" min="0" step="10" inputmode="decimal"><span>€</span></span></label>
+        <label class="champ-mini">Rendement / an<span class="champ-euro"><input type="number" id="fTaux" min="0" max="20" step="0.5" inputmode="decimal"><span>%</span></span></label>
       </div>
       <div id="projListe" class="liste-simple"></div>
       <div class="note" id="projNote"></div>

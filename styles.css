@@ -99,6 +99,7 @@ button.icone:active{background:var(--trait)}
 .info{color:var(--doux);font-size:12px}
 .note,.note-graphe{font-size:12px;color:var(--doux)}
 .alerte{font-size:12px;color:var(--rouge)}
+.note .btn.lien{min-height:0;padding:0;display:inline;font-size:12px}
 .alerte:empty{display:none}
 .vide{color:var(--doux);text-align:center;padding:24px 8px}
 
@@ -244,9 +245,9 @@ button.etiquette{cursor:pointer;min-height:28px}
 .plan-ligne .m small{display:block;color:var(--doux);font-size:12px;font-weight:400}
 .prop{background:var(--marine-doux);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:4px}
 .prop .plan-ligne{border-color:color-mix(in srgb,var(--marine) 18%,transparent)}
-.champ-taux{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--doux);font-weight:500}
-.champ-taux .champ-euro{min-width:0;width:88px;flex:none}
-.champ-taux input{font-size:16px}
+.deux-champs{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:440px}
+.deux-champs .champ-euro{min-width:0;max-width:none;width:100%}
+.deux-champs input{font-size:16px}
 .proj-ligne{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--trait)}
 .proj-ligne:last-child{border-bottom:none}
 .proj-ligne span small{display:block;font-size:12px;color:var(--doux)}

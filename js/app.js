@@ -6,7 +6,7 @@ import { courbe, barres } from "./graphiques.js";
 import { lirePageJustETF } from "./justetf.js";
 import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.8.0";
+export const VERSION = "1.8.1";
 // palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
@@ -181,6 +181,7 @@ function courbeAccueil() {
   const h = PERIODE_MINI === "max" ? VUE.hist : VUE.hist.filter(p => p.date > C.ajouterJours(VUE.hist[VUE.hist.length - 1]?.date || aujourdhui(), -PERIODE_MINI));
   const perf = h.map(p => p.indice / h[0].indice - 1);
   const fin = perf[perf.length - 1];
+  // pas de MSCI World ici (choix de l'utilisateur) : la comparaison est dans Graphiques → Performance
   $("kPerfPeriode").innerHTML = h.length > 1 ? `<span class="${classeSigne(fin)}">${pct(fin, true, 2)}</span>` : "";
   courbe($("gMini"), { dates: h.map(p => p.date), titre: "Performance du PEA", hauteur: 180, epure: true, zero: true,
     series: [{ nom: "Performance", couleur: "var(--vert)", valeurs: perf, signe: true }],
@@ -389,10 +390,15 @@ function strategie() {
 }
 
 // ---------- projection de l'épargne (simple calcul, le taux est une hypothèse choisie) ----------
-const CLE_TAUX = "investir-pea:taux";
+// Versé par mois : saisi à la main (gardé sur l'appareil) ou, par défaut, la moyenne réelle des 12 derniers mois.
+const CLE_TAUX = "investir-pea:taux", CLE_VERSE_PROJ = "investir-pea:verse-projection";
+const lireCle = cle => { try { return localStorage.getItem(cle); } catch { return null; } };
 function projectionPlan() {
-  const r = VUE.resume, mensuel = Object.values(DON.plan.montants || {}).reduce((a, b) => a + b, 0);
-  if (document.activeElement !== $("fTaux")) $("fTaux").value = (() => { try { return localStorage.getItem(CLE_TAUX); } catch { return null; } })() || "6";
+  const r = VUE.resume, moyenne = Math.round(C.versementMensuelMoyen(DON, aujourdhui()));
+  if (document.activeElement !== $("fTaux")) $("fTaux").value = lireCle(CLE_TAUX) || "6";
+  if (document.activeElement !== $("fVerseProj")) $("fVerseProj").value = lireCle(CLE_VERSE_PROJ) || moyenne;
+  const saisi = lireCle(CLE_VERSE_PROJ) != null;
+  const mensuel = Math.max(0, parseFloat($("fVerseProj").value) || 0);
   const taux = (parseFloat($("fTaux").value.replace(",", ".")) || 0) / 100;
   const plafond = DON.reglages.plafond || 150000, an = +aujourdhui().slice(0, 4);
   $("projListe").innerHTML = [5, 10, 15, 20, 25].map(n => {
@@ -401,10 +407,19 @@ function projectionPlan() {
       <b>${eur(p.valeur, 0)}<small>dont ${eur(p.verse, 0)} versés</small></b></div>`;
   }).join("");
   const pl = C.projection({ depart: r.valeur, verse: r.verse, mensuel, taux, mois: 12 * 60, plafond });
-  $("projNote").textContent = `${eur(mensuel, 0)}/mois${pl.moisPlafond ? ` · plafond de ${eur(plafond, 0)} atteint vers ${an + Math.ceil(pl.moisPlafond / 12)}` : ""} · hypothèse, pas une prévision.`;
+  $("projNote").innerHTML = `${saisi ? `Ta moyenne sur 12 mois : ${eur(moyenne, 0)}/mois · <button class="btn lien" id="btnVerseMoyen">la reprendre</button>.`
+      : "Par défaut : ta moyenne des 12 derniers mois."}${pl.moisPlafond ? ` Plafond de ${eur(plafond, 0)} atteint vers ${an + Math.ceil(pl.moisPlafond / 12)}.` : ""} Hypothèse, pas une prévision.`;
+  $("btnVerseMoyen")?.addEventListener("click", () => {
+    try { localStorage.removeItem(CLE_VERSE_PROJ); } catch { /* */ }
+    projectionPlan();
+  });
 }
 $("fTaux").addEventListener("input", () => {
   try { localStorage.setItem(CLE_TAUX, $("fTaux").value); } catch { /* */ }
+  projectionPlan();
+});
+$("fVerseProj").addEventListener("input", () => {
+  try { const v = $("fVerseProj").value; v === "" ? localStorage.removeItem(CLE_VERSE_PROJ) : localStorage.setItem(CLE_VERSE_PROJ, v); } catch { /* */ }
   projectionPlan();
 });
 function dessinerCibles() {
@@ -1171,7 +1186,8 @@ function demarrer() {
   ouvrirOnglet(SECONDAIRES.includes(onglet) || !panneau(onglet) ? "accueil" : onglet);
   D.demanderPersistance().then(() => sauvegarde());
   const ancien = !COURS.maj || Date.now() - new Date(COURS.maj) > 15 * 60e3;
-  if (ancien) chargerCours(false);
+  const sansReference = !Object.keys(COURS.closes[C.REFERENCE.isin] || {}).length;   // MSCI World pas encore téléchargé
+  if (ancien || sansReference) chargerCours(false);
 }
 
 DON = D.charger();

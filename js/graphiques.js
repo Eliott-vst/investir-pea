@@ -24,7 +24,7 @@ export function courbe(conteneur, opts) {
   const { dates, series } = opts;
   if (dates.length < 2) { conteneur.innerHTML = `<div class="vide">Pas encore assez de données.</div>`; return; }
   const enLegende = series.filter(s => s.legende !== false);
-  if (enLegende.length > 1 || opts.legende) {
+  if (!opts.sansLegende && (enLegende.length > 1 || opts.legende)) {
     const leg = document.createElement("div"); leg.className = "legende";
     leg.innerHTML = enLegende.map(s => `<span><i class="${s.pointille ? "pointille" : ""}" style="--c:${s.couleur}"></i>${s.nom}</span>`).join("")
       + (opts.legende || "");
