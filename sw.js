@@ -1,9 +1,9 @@
 // Service worker : l'application fonctionne hors ligne (fichiers en cache).
 // Les cours Euronext ne passent pas par ici (autre domaine) : ils sont gardés par l'application elle-même.
 // Changer VERSION à chaque mise à jour de l'application pour que les appareils la récupèrent.
-const VERSION = "investir-pea-1.6.0";
+const VERSION = "investir-pea-1.7.0";
 const FICHIERS = [
-  "./", "index.html", "styles.css", "manifest.webmanifest",
+  "./", "index.html", "styles.css", "manifest.webmanifest", "polices/inter-latin.woff2",
   "js/app.js", "js/calculs.js", "js/donnees.js", "js/cours.js", "js/graphiques.js", "js/fiches.js", "js/justetf.js",
   "icones/icone-180.png", "icones/icone-192.png", "icones/icone-512.png", "icones/icone-masquable-512.png",
 ];

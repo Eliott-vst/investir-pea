@@ -33,17 +33,20 @@ export function courbe(conteneur, opts) {
   const zone = document.createElement("div"); zone.className = "graphe-zone"; conteneur.appendChild(zone);
   const bulle = document.createElement("div"); bulle.className = "bulle"; bulle.hidden = true; zone.appendChild(bulle);
 
-  const L = Math.max(280, zone.clientWidth || conteneur.clientWidth || 600);
+  const L = Math.max(260, zone.clientWidth || conteneur.clientWidth || 600);
   const H = opts.hauteur || (L < 500 ? 210 : 260);
-  const m = { h: 10, b: 24, g: 8, d: 8 };
+  // « épuré » : ni axes ni grille (courbe de l'Accueil, façon application bancaire)
+  const epure = !!opts.epure;
+  const m = epure ? { h: 8, b: 8, g: 4, d: 4 } : { h: 10, b: 24, g: 8, d: 8 };
   const toutes = series.flatMap(s => s.valeurs).filter(v => v != null && isFinite(v));
   let min = Math.min(...toutes), max = Math.max(...toutes);
   if (opts.zero) { min = Math.min(min, 0); max = Math.max(max, 0); }
-  const ticks = graduations(min, max);
-  min = ticks[0]; max = ticks[ticks.length - 1];
+  const ticks = epure ? [] : graduations(min, max);
+  if (epure) { const marge = (max - min || Math.abs(max) || 1) * 0.08; min -= marge; max += marge; }
+  else { min = ticks[0]; max = ticks[ticks.length - 1]; }
   const fa = opts.formatAxe || opts.format;
   // largeur de l'axe Y d'après le libellé le plus long
-  m.g = 10 + Math.max(...ticks.map(t => fa(t).length)) * 6.6;
+  if (!epure) m.g = 10 + Math.max(...ticks.map(t => fa(t).length)) * 6.8;
   const x = i => m.g + (i / (dates.length - 1)) * (L - m.g - m.d);
   const y = v => m.h + (1 - (v - min) / (max - min)) * (H - m.h - m.b);
 
@@ -56,7 +59,7 @@ export function courbe(conteneur, opts) {
   const jours = dates.length, moisVus = new Set();
   const pasMois = opts.pasMois ?? (jours > 400 ? 6 : jours > 200 ? 3 : jours > 70 ? 1 : 0);
   let dernierX = -1e9;
-  if (pasMois) dates.forEach((d, i) => {
+  if (pasMois && !epure) dates.forEach((d, i) => {
     const cle = d.slice(0, 7);
     if (moisVus.has(cle)) return; moisVus.add(cle);
     const mo = +d.slice(5, 7) - 1;
@@ -66,7 +69,7 @@ export function courbe(conteneur, opts) {
     tx.textContent = mo === 0 ? d.slice(0, 4) : MOIS[mo];
     svg.appendChild(tx);
   });
-  if (!pasMois) {   // période courte : quelques dates
+  if (!pasMois && !epure) {   // période courte : quelques dates
     const n = 4;
     for (let k = 0; k <= n; k++) {
       const i = Math.round(k * (jours - 1) / n), d = dates[i];
@@ -99,8 +102,13 @@ export function courbe(conteneur, opts) {
       continue;
     }
     if (s.aire) {
-      const base = y(Math.max(min, 0));
-      svg.appendChild(el("path", { d: `${dpath}L${x(dates.length - 1)},${base}L${x(0)},${base}Z`, fill: s.couleur, opacity: 0.1 }));
+      // remplissage en dégradé, du trait vers le bas du graphique
+      const base = epure ? H : y(Math.max(min, 0)), id = "a" + Math.random().toString(36).slice(2, 8);
+      const defs = el("defs");
+      defs.innerHTML = `<linearGradient id="${id}" x1="0" y1="${m.h}" x2="0" y2="${base}" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="${s.couleur}" stop-opacity=".22"/><stop offset="1" stop-color="${s.couleur}" stop-opacity="0"/></linearGradient>`;
+      svg.appendChild(defs);
+      svg.appendChild(el("path", { d: `${dpath}L${x(dates.length - 1)},${base}L${x(0)},${base}Z`, fill: `url(#${id})` }));
     }
     svg.appendChild(el("path", { d: dpath, fill: "none", stroke: s.couleur, "stroke-width": s.epaisseur || 2, "stroke-linejoin": "round",
                                  ...(s.opacite ? { opacity: s.opacite } : {}),
