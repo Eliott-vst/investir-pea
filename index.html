@@ -63,6 +63,7 @@
       <div id="gMini" class="graphe-hero"></div>
       <div class="puces" role="group" aria-label="Période du graphique">
         <button data-pmini="30">1M</button><button data-pmini="91" class="actif">3M</button><button data-pmini="182">6M</button><button data-pmini="365">1A</button><button data-pmini="max">Max</button>
+        <span class="perf-periode" id="kPerfPeriode" title="Performance sur la période, hors versements"></span>
       </div>
       <div class="chiffres" id="kChiffres"></div>
     </section>
@@ -210,6 +211,14 @@
       </div>
       <button class="btn" id="btnRecalcul">Recalculer la répartition</button>
       <div class="prop" id="planProp" hidden></div>
+    </section>
+
+    <section class="carte">
+      <div class="titre-carte"><h2>Projection</h2>
+        <label class="champ-taux">Rendement / an<span class="champ-euro"><input type="number" id="fTaux" min="0" max="20" step="0.5" inputmode="decimal" aria-label="Rendement annuel supposé"><span>%</span></span></label>
+      </div>
+      <div id="projListe" class="liste-simple"></div>
+      <div class="note" id="projNote"></div>
     </section>
   </div>
 

@@ -150,6 +150,7 @@ details summary{cursor:pointer;color:var(--marine);font-weight:500;min-height:va
 .puces button{border:none;background:none;border-radius:18px;padding:0 14px;min-height:36px;cursor:pointer;font-weight:500;color:var(--doux)}
 .puces button:hover{color:var(--encre)}
 .puces button.actif{background:var(--champ);color:var(--encre);font-weight:600}
+.puces .perf-periode{margin-left:auto;align-self:center;font-weight:600;font-feature-settings:"tnum","cv11"}
 .segments{display:flex;background:var(--champ);border-radius:12px;padding:3px;gap:2px;align-self:stretch;max-width:420px}
 .segments button{flex:1;border:none;background:none;min-height:38px;border-radius:9px;cursor:pointer;font-weight:500;color:var(--doux)}
 .segments button.actif{background:var(--carte);color:var(--encre);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -243,6 +244,14 @@ button.etiquette{cursor:pointer;min-height:28px}
 .plan-ligne .m small{display:block;color:var(--doux);font-size:12px;font-weight:400}
 .prop{background:var(--marine-doux);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:4px}
 .prop .plan-ligne{border-color:color-mix(in srgb,var(--marine) 18%,transparent)}
+.champ-taux{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--doux);font-weight:500}
+.champ-taux .champ-euro{min-width:0;width:88px;flex:none}
+.champ-taux input{font-size:16px}
+.proj-ligne{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--trait)}
+.proj-ligne:last-child{border-bottom:none}
+.proj-ligne span small{display:block;font-size:12px;color:var(--doux)}
+.proj-ligne b{font-weight:600;font-feature-settings:"tnum","cv11";text-align:right}
+.proj-ligne b small{display:block;font-size:12px;color:var(--doux);font-weight:400}
 .rappel{background:var(--ambre-doux);color:var(--ambre);border-radius:var(--r);padding:10px 12px;font-size:12px}
 
 /* ---------- réglages ---------- */

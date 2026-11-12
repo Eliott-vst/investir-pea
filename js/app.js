@@ -6,7 +6,7 @@ import { courbe, barres } from "./graphiques.js";
 import { lirePageJustETF } from "./justetf.js";
 import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.7.0";
+export const VERSION = "1.8.0";
 // palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
@@ -176,14 +176,16 @@ function accueil() {
   courbeAccueil();
 }
 
+// Courbe de performance hors versements (même calcul que Graphiques → Performance), sans axes.
 function courbeAccueil() {
   const h = PERIODE_MINI === "max" ? VUE.hist : VUE.hist.filter(p => p.date > C.ajouterJours(VUE.hist[VUE.hist.length - 1]?.date || aujourdhui(), -PERIODE_MINI));
-  const perf = h.length ? h[h.length - 1].indice / h[0].indice - 1 : 0;
-  const coul = perf >= 0 ? "var(--vert)" : "var(--rouge)";
-  courbe($("gMini"), { dates: h.map(p => p.date), titre: "Valeur du PEA", hauteur: 180, epure: true,
-    series: [{ nom: "Valeur du PEA", couleur: coul, valeurs: h.map(p => p.valeur), aire: true }],
-    format: v => eur(v, 0),
-    bulle: i => [["Valeur", eur(h[i].valeur, 0)], ["Performance", pct(h[i].indice / h[0].indice - 1, true, 2)]] });
+  const perf = h.map(p => p.indice / h[0].indice - 1);
+  const fin = perf[perf.length - 1];
+  $("kPerfPeriode").innerHTML = h.length > 1 ? `<span class="${classeSigne(fin)}">${pct(fin, true, 2)}</span>` : "";
+  courbe($("gMini"), { dates: h.map(p => p.date), titre: "Performance du PEA", hauteur: 180, epure: true, zero: true,
+    series: [{ nom: "Performance", couleur: "var(--vert)", valeurs: perf, signe: true }],
+    format: v => pct(v, true, 2),
+    bulle: i => [["Performance", pct(perf[i], true, 2), perf[i] >= 0 ? "var(--vert)" : "var(--rouge)"], ["Valeur", eur(h[i].valeur, 0)]] });
 }
 document.querySelectorAll("[data-pmini]").forEach(b => b.onclick = () => {
   PERIODE_MINI = b.dataset.pmini === "max" ? "max" : +b.dataset.pmini;
@@ -383,7 +385,28 @@ function strategie() {
   }).join("") || etatVide("Aucun plan. Indiquez un montant puis recalculez.");
   if (!$("fMensuel").value) $("fMensuel").value = total || 500;
   $("fJour").innerHTML = Array.from({ length: 28 }, (_, i) => `<option ${i + 1 === pl.jour ? "selected" : ""}>${i + 1}</option>`).join("");
+  projectionPlan();
 }
+
+// ---------- projection de l'épargne (simple calcul, le taux est une hypothèse choisie) ----------
+const CLE_TAUX = "investir-pea:taux";
+function projectionPlan() {
+  const r = VUE.resume, mensuel = Object.values(DON.plan.montants || {}).reduce((a, b) => a + b, 0);
+  if (document.activeElement !== $("fTaux")) $("fTaux").value = (() => { try { return localStorage.getItem(CLE_TAUX); } catch { return null; } })() || "6";
+  const taux = (parseFloat($("fTaux").value.replace(",", ".")) || 0) / 100;
+  const plafond = DON.reglages.plafond || 150000, an = +aujourdhui().slice(0, 4);
+  $("projListe").innerHTML = [5, 10, 15, 20, 25].map(n => {
+    const p = C.projection({ depart: r.valeur, verse: r.verse, mensuel, taux, mois: 12 * n, plafond });
+    return `<div class="proj-ligne"><span>Dans ${n} ans<small>${an + n}</small></span>
+      <b>${eur(p.valeur, 0)}<small>dont ${eur(p.verse, 0)} versés</small></b></div>`;
+  }).join("");
+  const pl = C.projection({ depart: r.valeur, verse: r.verse, mensuel, taux, mois: 12 * 60, plafond });
+  $("projNote").textContent = `${eur(mensuel, 0)}/mois${pl.moisPlafond ? ` · plafond de ${eur(plafond, 0)} atteint vers ${an + Math.ceil(pl.moisPlafond / 12)}` : ""} · hypothèse, pas une prévision.`;
+}
+$("fTaux").addEventListener("input", () => {
+  try { localStorage.setItem(CLE_TAUX, $("fTaux").value); } catch { /* */ }
+  projectionPlan();
+});
 function dessinerCibles() {
   const valeurs = Object.fromEntries(VUE.lignes.map(l => [l.isin, l.valeur || 0]));
   const renf = etfs().filter(e => (CIBLES[e.isin] || 0) > 0).reduce((s, e) => s + valeurs[e.isin], 0);
@@ -584,16 +607,23 @@ function graphiques() {
       : mesure === "absolue" ? h.map(p => p.pv - (PERIODE === "max" ? 0 : prem.pv)) : h.map(p => p.pvPct);
     const fmt = mesure === "absolue" ? v => eurS(v, 2) : v => pct(v, true, 2);
     const fin = serieP[serieP.length - 1];
+    // comparaison au MSCI World : seulement pour la variation relative (même base, hors versements)
+    const ref = mesure === "relative" ? C.perfReference(COURS.closes[C.REFERENCE.isin], dates) : null;
+    const refFin = ref?.[ref.length - 1];
     $("gPvInfo").innerHTML = `<span class="${classeSigne(fin)}">${fmt(fin)}</span>`;
-    $("gPvNote").textContent = {
-      relative: "Hors effet des versements, comme justETF.",
+    $("gPvNote").innerHTML = {
+      relative: refFin == null ? "Hors effet des versements, comme justETF."
+        : `Écart avec le ${C.REFERENCE.nom} : <b class="${classeSigne(fin - refFin)}">${(fin - refFin >= 0 ? "+" : "−") + nf(Math.abs(fin - refFin) * 100, 1)} pt</b>`,
       absolue: "Valeur des titres moins le montant investi.",
       investi: "Plus-value rapportée au montant investi.",
     }[mesure];
+    const aRef = ref?.some(v => v != null);
     courbe($("gPv"), { dates, titre: "Graphique de performance", zero: true,
-      series: [{ nom: "Performance", couleur: "var(--vert)", valeurs: serieP, signe: true }],
+      series: [{ nom: "Mon PEA", couleur: "var(--vert)", valeurs: serieP, signe: true },
+               ...(aRef ? [{ nom: C.REFERENCE.nom, couleur: "var(--verse)", valeurs: ref, pointille: true, epaisseur: 1.75 }] : [])],
       format: fmt, formatAxe: mesure === "absolue" ? k : axePct,
-      bulle: i => [["Performance", fmt(serieP[i]), serieP[i] >= 0 ? "var(--vert)" : "var(--rouge)"], ["Valeur du PEA", eur(h[i].valeur, 0)]] });
+      bulle: i => [["Mon PEA", fmt(serieP[i]), serieP[i] >= 0 ? "var(--vert)" : "var(--rouge)"],
+                   ...(aRef && ref[i] != null ? [[C.REFERENCE.nom, fmt(ref[i]), "var(--verse)"]] : []), ["Valeur du PEA", eur(h[i].valeur, 0)]] });
   } else $("gPv").innerHTML = "";
 
   $("gValInfo").textContent = "";
@@ -617,6 +647,8 @@ function graphiques() {
   });
   const base = prem?.indice;
   series.unshift({ nom: "Mon PEA", couleur: "var(--encre)", epaisseur: 2.5, valeurs: h.map(p => p.indice / base * 100) });
+  const refBase = C.perfReference(COURS.closes[C.REFERENCE.isin], dates);
+  if (refBase.some(v => v != null)) series.push({ nom: C.REFERENCE.nom, couleur: "var(--verse)", pointille: true, epaisseur: 1.75, valeurs: refBase.map(v => v == null ? null : (1 + v) * 100) });
   courbe($("gPerf"), { dates, titre: "Performance comparée, base 100",
     series, format: v => (v >= 100 ? "+" : "−") + nf(Math.abs(v - 100), 1) + " %", formatAxe: v => nf(v, 0) });
 
@@ -999,7 +1031,9 @@ async function chargerCours(manuel = false) {
   if (sansCours()) accueil();
   try {
     const depuis = [DON.reglages.ouverture, DON.achats[0]?.date].filter(Boolean).sort()[0] || C.ajouterJours(aujourdhui(), -400);
-    const erreurs = await actualiserCours(COURS, titresCours(), C.ajouterJours(depuis, -7));
+    // l'indice de référence est téléchargé avec les lignes ; son échec seul ne mérite pas d'alerte
+    const erreurs = (await actualiserCours(COURS, [...titresCours(), C.REFERENCE], C.ajouterJours(depuis, -7)))
+      .filter(e => !e.startsWith(C.REFERENCE.isin));
     D.enregistrerCours(COURS);
     CHARGEMENT = false;
     tout();

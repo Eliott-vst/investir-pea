@@ -55,6 +55,8 @@ export function courbe(conteneur, opts) {
     svg.appendChild(el("line", { x1: m.g, x2: L - m.d, y1: y(t), y2: y(t), class: t === 0 && opts.zero ? "axe-zero" : "grille" }));
     const tx = el("text", { x: m.g - 6, y: y(t) + 4, "text-anchor": "end", class: "axe" }); tx.textContent = fa(t); svg.appendChild(tx);
   }
+  if (epure && opts.zero && min < 0 && max > 0)   // ligne zéro discrète
+    svg.appendChild(el("line", { x1: m.g, x2: L - m.d, y1: y(0), y2: y(0), class: "axe-zero", "stroke-dasharray": "2 4" }));
   // repères de temps : un libellé par mois (ou par trimestre / année si la période est longue)
   const jours = dates.length, moisVus = new Set();
   const pasMois = opts.pasMois ?? (jours > 400 ? 6 : jours > 200 ? 3 : jours > 70 ? 1 : 0);

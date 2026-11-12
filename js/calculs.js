@@ -405,3 +405,35 @@ export function variationsPeriode(donnees, lignes, hist, debut) {
   }
   return { lignes: out, total: { variation: tv, pct: tb ? tv / tb : null, dividendes: td, total: tv + td, totalPct: tb ? (tv + td) / tb : null } };
 }
+
+// ---------- indice de référence et projection ----------
+
+/** Indice de comparaison : Amundi MSCI World (CW8, Euronext Paris, capitalisant, en euros). */
+export const REFERENCE = { isin: "LU1681043599", place: "XPAR", nom: "MSCI World", ticker: "CW8" };
+
+/** Performance d'une suite de clôtures sur `dates` (triées), base = premier cours connu à la première date ;
+ *  le dernier cours connu est reporté les jours sans cotation. → [perf (0,05 = +5 %) | null] */
+export function perfReference(closes, dates) {
+  const s = serie(closes);
+  let j = -1, base = null;
+  return dates.map(d => {
+    while (j + 1 < s.length && s[j + 1][0] <= d) j++;
+    if (j < 0) return null;
+    base ??= s[j][1];
+    return s[j][1] / base - 1;
+  });
+}
+
+/** Projection mois par mois : rendement annuel `taux` (0,06 = 6 %) composé chaque mois, versement `mensuel`
+ *  jusqu'au plafond des versements. → { valeur, verse, moisPlafond (n° du mois où le plafond est atteint, ou null) } */
+export function projection({ depart, verse, mensuel, taux, mois, plafond = 150000 }) {
+  const r = Math.pow(1 + taux, 1 / 12) - 1;
+  let valeur = depart, total = verse, moisPlafond = null;
+  for (let m = 1; m <= mois; m++) {
+    const ajout = Math.max(0, Math.min(mensuel, plafond - total));
+    valeur = valeur * (1 + r) + ajout;
+    total += ajout;
+    if (moisPlafond == null && ajout > 0 && total >= plafond - 0.005) moisPlafond = m;
+  }
+  return { valeur, verse: total, moisPlafond };
+}
