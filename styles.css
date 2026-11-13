@@ -151,7 +151,7 @@ details summary{cursor:pointer;color:var(--marine);font-weight:500;min-height:va
 .puces button{border:none;background:none;border-radius:18px;padding:0 14px;min-height:36px;cursor:pointer;font-weight:500;color:var(--doux)}
 .puces button:hover{color:var(--encre)}
 .puces button.actif{background:var(--champ);color:var(--encre);font-weight:600}
-.puces .perf-periode{margin-left:auto;align-self:center;font-weight:600;font-feature-settings:"tnum","cv11"}
+.puces .perf-periode{margin-left:auto;align-self:center;font-weight:600;font-feature-settings:"tnum","cv11";cursor:pointer;-webkit-tap-highlight-color:transparent}
 .segments{display:flex;background:var(--champ);border-radius:12px;padding:3px;gap:2px;align-self:stretch;max-width:420px}
 .segments button{flex:1;border:none;background:none;min-height:38px;border-radius:9px;cursor:pointer;font-weight:500;color:var(--doux)}
 .segments button.actif{background:var(--carte);color:var(--encre);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}

@@ -406,6 +406,18 @@ export function variationsPeriode(donnees, lignes, hist, debut) {
   return { lignes: out, total: { variation: tv, pct: tb ? tv / tb : null, dividendes: td, total: tv + td, totalPct: tb ? (tv + td) / tb : null } };
 }
 
+/** Gain jour par jour depuis `depart` (point de l'historique, ou null = rien d'investi), comme les courtiers :
+ *  gain = variation de la valeur des titres − achats depuis le départ ; % = gain / (valeur au départ + achats).
+ *  En fin de période, c'est le total de variationsPeriode (hors dividendes) ; sur Max, la plus-value et son %.
+ *  → [{gain, pct}] */
+export function gainsPeriode(points, depart = null) {
+  const t0 = depart?.titres || 0, i0 = depart?.investi || 0;
+  return points.map(p => {
+    const achats = p.investi - i0, gain = p.titres - t0 - achats, base = t0 + achats;
+    return { gain, pct: base > 0 ? gain / base : null };
+  });
+}
+
 // ---------- indice de référence et projection ----------
 
 /** Indice de comparaison : Amundi MSCI World (CW8, Euronext Paris, capitalisant, en euros). */

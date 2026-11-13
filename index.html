@@ -63,7 +63,7 @@
       <div id="gMini" class="graphe-hero"></div>
       <div class="puces" role="group" aria-label="Période du graphique">
         <button data-pmini="30">1M</button><button data-pmini="91" class="actif">3M</button><button data-pmini="182">6M</button><button data-pmini="365">1A</button><button data-pmini="max">Max</button>
-        <span class="perf-periode" id="kPerfPeriode" title="Performance sur la période, hors versements"></span>
+        <span class="perf-periode" id="kPerfPeriode" role="button" tabindex="0" title="Gain sur la période (toucher : % ou €)"></span>
       </div>
       <div class="chiffres" id="kChiffres"></div>
     </section>
@@ -139,7 +139,7 @@
           <select id="fMesurePerf">
             <option value="relative">Variation relative (%)</option>
             <option value="absolue">Gain en euros</option>
-            <option value="investi">Plus-value / investi (%)</option>
+            <option value="investi">Gain en %</option>
           </select><svg class="ico"><use href="#i-bas"/></svg></label>
         <div id="gPv"></div>
         <div class="note-graphe" id="gPvNote"></div>

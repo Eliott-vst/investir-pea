@@ -6,7 +6,7 @@ import { courbe, barres } from "./graphiques.js";
 import { lirePageJustETF } from "./justetf.js";
 import { FICHES } from "./fiches.js";
 
-export const VERSION = "1.8.1";
+export const VERSION = "1.8.2";
 // palette catégorielle validée (ordre fixe : la couleur suit la ligne, jamais son rang)
 const COULEURS = ["var(--e1)", "var(--e2)", "var(--e3)", "var(--e4)", "var(--e5)", "var(--e6)", "var(--e7)", "var(--e8)"];
 const CLE_BROUILLON = "investir-pea:brouillon";
@@ -176,17 +176,31 @@ function accueil() {
   courbeAccueil();
 }
 
-// Courbe de performance hors versements (même calcul que Graphiques → Performance), sans axes.
+/** Points d'une période : la séance qui précède la période (point de départ), puis celles de la période.
+ *  → { h, depart } ; depart = null sur Max (rien d'investi au départ). */
+function pointsPeriode(jours /* nombre de jours ou "max" */) {
+  const tout = VUE.hist;
+  if (jours === "max" || !tout.length) return { h: tout, depart: null };
+  const i = tout.findIndex(p => p.date > C.ajouterJours(tout[tout.length - 1].date, -jours));
+  if (i < 0) return { h: [], depart: null };
+  return i > 0 ? { h: tout.slice(i - 1), depart: tout[i - 1] } : { h: tout, depart: null };
+}
+
+// Courbe du gain en euros (achats déduits) et gain de la période en % ou en €, comme l'application du courtier.
+// Le rendement pondéré dans le temps (justETF) reste dans Graphiques → Performance, pour la comparaison au MSCI World.
+let MINI_EUROS = false;
 function courbeAccueil() {
-  const h = PERIODE_MINI === "max" ? VUE.hist : VUE.hist.filter(p => p.date > C.ajouterJours(VUE.hist[VUE.hist.length - 1]?.date || aujourdhui(), -PERIODE_MINI));
-  const perf = h.map(p => p.indice / h[0].indice - 1);
-  const fin = perf[perf.length - 1];
-  // pas de MSCI World ici (choix de l'utilisateur) : la comparaison est dans Graphiques → Performance
-  $("kPerfPeriode").innerHTML = h.length > 1 ? `<span class="${classeSigne(fin)}">${pct(fin, true, 2)}</span>` : "";
-  courbe($("gMini"), { dates: h.map(p => p.date), titre: "Performance du PEA", hauteur: 180, epure: true, zero: true,
-    series: [{ nom: "Performance", couleur: "var(--vert)", valeurs: perf, signe: true }],
-    format: v => pct(v, true, 2),
-    bulle: i => [["Performance", pct(perf[i], true, 2), perf[i] >= 0 ? "var(--vert)" : "var(--rouge)"], ["Valeur", eur(h[i].valeur, 0)]] });
+  const { h, depart } = pointsPeriode(PERIODE_MINI);
+  const g = C.gainsPeriode(h, depart);
+  const fin = g[g.length - 1];
+  const k = $("kPerfPeriode");
+  k.innerHTML = h.length > 1 ? `<span class="${classeSigne(fin.gain)}">${MINI_EUROS ? eurS(fin.gain, 2) : pct(fin.pct, true, 2)}</span>` : "";
+  k.onclick = () => { MINI_EUROS = !MINI_EUROS; courbeAccueil(); };
+  k.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); k.onclick(); } };
+  courbe($("gMini"), { dates: h.map(p => p.date), titre: "Gain du PEA", hauteur: 180, epure: true, zero: true,
+    series: [{ nom: "Gain", couleur: "var(--vert)", valeurs: g.map(x => x.gain), signe: true }],
+    format: v => eurS(v, 2),
+    bulle: i => [["Gain", `${eurS(g[i].gain, 2)} · ${pct(g[i].pct, true, 2)}`, g[i].gain >= 0 ? "var(--vert)" : "var(--rouge)"], ["Valeur", eur(h[i].valeur, 0)]] });
 }
 document.querySelectorAll("[data-pmini]").forEach(b => b.onclick = () => {
   PERIODE_MINI = b.dataset.pmini === "max" ? "max" : +b.dataset.pmini;
@@ -610,16 +624,22 @@ function graphiques() {
   const fin = h.length ? h[h.length - 1].date : aujourdhui();
   if (PERIODE === "ytd") h = h.filter(p => p.date >= fin.slice(0, 4) + "-01-01");
   else if (PERIODE !== "max") h = h.filter(p => p.date > C.ajouterJours(fin, -PERIODE));
+  // la période part de la clôture de la séance précédente (comme les rendements 1M, 1A… des courtiers)
+  const iDebut = PERIODE === "max" ? 0 : VUE.hist.indexOf(h[0]);
+  const depart = iDebut > 0 ? VUE.hist[iDebut - 1] : null;
+  if (depart) h = [depart, ...h];
   const dates = h.map(p => p.date);
   const k = v => Math.abs(v) >= 10000 ? nf(v / 1000, 0) + " k€" : Math.abs(v) >= 1000 ? nf(v / 1000, 1) + " k€" : nf(v, 0) + " €";
 
-  // graphique de performance : variation relative (hors versements), performance absolue (€) ou plus-value / investi
-  const der = h[h.length - 1], prem = h[0];
+  // graphique de performance : variation relative (pondérée dans le temps, comme justETF), gain en € ou gain en %
+  // (achats déduits, rapporté à la valeur de départ + achats, comme le courtier)
+  const prem = h[0];
   const mesure = $("fMesurePerf").value;
   const axePct = v => nf(Math.round(v * 100) || 0, 0) + " %";
   if (h.length) {
+    const gains = C.gainsPeriode(h, depart);
     const serieP = mesure === "relative" ? h.map(p => p.indice / prem.indice - 1)
-      : mesure === "absolue" ? h.map(p => p.pv - (PERIODE === "max" ? 0 : prem.pv)) : h.map(p => p.pvPct);
+      : mesure === "absolue" ? gains.map(g => g.gain) : gains.map(g => g.pct);
     const fmt = mesure === "absolue" ? v => eurS(v, 2) : v => pct(v, true, 2);
     const fin = serieP[serieP.length - 1];
     // comparaison au MSCI World : seulement pour la variation relative (même base, hors versements)
@@ -629,8 +649,8 @@ function graphiques() {
     $("gPvNote").innerHTML = {
       relative: refFin == null ? "Hors effet des versements, comme justETF."
         : `Écart avec le ${C.REFERENCE.nom} : <b class="${classeSigne(fin - refFin)}">${(fin - refFin >= 0 ? "+" : "−") + nf(Math.abs(fin - refFin) * 100, 1)} pt</b>`,
-      absolue: "Valeur des titres moins le montant investi.",
-      investi: "Plus-value rapportée au montant investi.",
+      absolue: "Achats déduits.",
+      investi: "Gain rapporté à la valeur de départ et aux achats.",
     }[mesure];
     const aRef = ref?.some(v => v != null);
     courbe($("gPv"), { dates, titre: "Graphique de performance", zero: true,
